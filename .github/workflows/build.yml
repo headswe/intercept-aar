@@ -26,3 +26,26 @@ jobs:
         with:
           name: "@intercept_aar"
           path: out/mod
+
+  # The Intercept host DLL from the same Intercept commit as our submodule. Older @intercept
+  # releases crash on current Arma 3 builds, so this one replaces intercept_x64.dll in @intercept.
+  intercept-host:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Configure
+        run: cmake -S intercept -B out-host -A x64
+      - name: Build
+        run: cmake --build out-host --config Release --target intercept_x64
+      - name: Locate DLL
+        shell: pwsh
+        run: Get-ChildItem -Recurse -Filter intercept_x64.dll intercept/build, out-host -ErrorAction SilentlyContinue | Select-Object FullName
+      - uses: actions/upload-artifact@v4
+        with:
+          name: intercept_x64 (host)
+          path: |
+            intercept/build/win64/**/intercept_x64.dll
+            out-host/**/Release/intercept_x64.dll
+          if-no-files-found: error
