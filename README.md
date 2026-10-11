@@ -87,11 +87,12 @@ class InterceptAAR {
 
 Projectiles use the projectile event handlers added in Arma 3 2.10+ (`HitPart`, `HitExplosion`, `Explode`, `Deleted`) together with the `ProjectileCreated` mission event handler. Intercept does not wrap these yet, so the plugin registers an SQF command, `interceptAARProjectile`, and adds the handlers with a small SQF snippet that forwards to it.
 
-Shots are simulated on every machine, so the server's own copy of a player's bullet raises `HitPart` on the server too. That records hits on players on a dedicated server, which the old `Hit` event handler cannot do. `hit` is still logged for server-local units because it carries the damage amount.
+Shots are simulated on every machine (the same reason `Fired` fires for remote units), so the server's own copy of a player's bullet raises `HitPart` on the server too. That records hits on players on a dedicated server, which the old `Hit` event handler cannot do. `hit` is still logged for server-local units because it carries the damage amount.
 
 ## Known limitations
 
 - `logProjectiles` writes two or three lines per round. Large firefights produce big files; turn it off if you only need movement and kills.
 - Bullet impacts on terrain and buildings are not logged as hits, only as the `proj_end` position.
-- Requires Arma 3 2.18 or newer for `ProjectileCreated` and the projectile event handlers.
+- Needs a current Arma 3 build: `ProjectileCreated` and the projectile event handlers do not exist in older versions.
+- Recording hits on remote players this way has not been tested in-game yet.
 - Intercept's upstream headers do not compile on Linux as-is, so the Linux server build is not supported yet. The plugin's own code was compile-checked against them with a few local header fixes.
