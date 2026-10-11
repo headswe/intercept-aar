@@ -45,7 +45,7 @@ Every line is a JSON object with `type` and `t` (mission time in seconds, from `
 | `hit` | `unit`, `source`, `instigator`, `damage` (server-local units only, see below) |
 | `shot` | projectile created: `id` (projectile id), `shooter`, optional `parent` (for submunitions), optional `instigator` (the gunner when `shooter` is a vehicle), `weapon`, `ammo`, `pos`, `vel` |
 | `submunition` | links a submunition (smoke or artillery shell, bomblet) recorded before its parent was known: `id`, `parent`, `shooter` |
-| `proj_hit` | projectile directly hit a recorded unit or vehicle: `id`, `target`, `pos`, `part` (first component hit, e.g. `head`); one per projectile and target |
+| `proj_hit` | projectile directly hit a recorded unit or vehicle: `id`, `target`, `pos`, `part` (component hit, e.g. `head`); one line per component the projectile passes through, so consecutive lines trace penetration |
 | `proj_splash` | explosive projectile damaged a recorded unit or vehicle: `id`, `target` |
 | `proj_end` | projectile removed: `id`, `pos` (impact or end point), `exploded` |
 | `get_in` / `get_out` | `vehicle`, `unit`, `role` (`driver`, `gunner`, `cargo`) |

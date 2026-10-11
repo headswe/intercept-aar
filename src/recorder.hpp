@@ -78,7 +78,6 @@ private:
     std::unordered_map<int, tracked> entities_;
     struct projectile_state {
         int shooter = 0;
-        std::vector<int> hit_targets;  // entities already reported in proj_hit / proj_splash
     };
     std::unordered_map<int, projectile_state> projectiles_;  // in flight; erased at proj_end
     std::vector<EHIdentifierHandle> mission_handlers_;

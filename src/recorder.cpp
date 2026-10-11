@@ -5,7 +5,6 @@
 #include <cstdlib>
 #include <ctime>
 #include <filesystem>
-#include <algorithm>
 #include <unordered_set>
 
 #include "json_line.hpp"
@@ -415,10 +414,8 @@ void recorder::on_projectile_event(const game_value& args) {
         // Only hits on recorded units and vehicles; bullets striking terrain or buildings are not logged.
         int target = known_id(object(args[2]));
         if (target <= 0) return;
-        // HitPart fires once per component a bullet passes through; keep only the first per target.
-        auto& hit = projectiles_[pid].hit_targets;
-        if (std::find(hit.begin(), hit.end(), target) != hit.end()) return;
-        hit.push_back(target);
+        // HitPart fires once per component the bullet passes through, so several lines for the
+        // same projectile and target trace its path through the body.
         json_line line(kind == "hit" ? "proj_hit" : "proj_splash", now());
         line.field("id", pid).field("target", target);
         if (kind == "hit" && args.size() >= 5) {
