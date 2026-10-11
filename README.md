@@ -1,6 +1,6 @@
 # Intercept AAR Recorder
 
-An [Intercept](https://intercept.github.io/) plugin for Arma 3 that records a mission for After Action Review. While a mission runs on the server it writes one line-delimited JSON file (`.jsonl`) containing periodic snapshots of every unit and vehicle plus the events that happened (kills, hits, shots, vehicle get in/out, player connects, markers).
+An [Intercept](https://intercept.github.io/) plugin for Arma 3 that records a mission for After Action Review. While a mission runs on the server it writes one line-delimited JSON file (`.jsonl`) containing periodic snapshots of every unit and vehicle plus the events that happened (kills, hits, every projectile from muzzle to impact, vehicle get in/out, player connects, markers).
 
 ## Building
 
@@ -40,8 +40,11 @@ Every line is a JSON object with `type` and `t` (mission time in seconds, from `
 | `entity` | first sighting of an entity: `id`, `kind` (`unit`, `car`, `tank`, `heli`, `plane`, `ship`, `static`, `vehicle`, `air`), `class`, `display`, `side`; units also have `name`, `group`, `player`, `uid` |
 | `snap` | `key` (true for a full keyframe), `e`: array of `[id, x, y, z, dir, alive, damage, vehicle_id]` |
 | `killed` | `victim`, `killer`, `instigator`, `pos` |
-| `hit` | `unit`, `source`, `instigator`, `damage` |
-| `fired` | `unit`, optional `gunner`, `weapon`, `muzzle`, `ammo`, `pos` |
+| `hit` | `unit`, `source`, `instigator`, `damage` (server-local units only, see below) |
+| `shot` | projectile created: `id` (projectile id), `shooter`, optional `instigator` (the gunner when `shooter` is a vehicle), `weapon`, `ammo`, `pos`, `vel` |
+| `proj_hit` | projectile directly hit a recorded unit or vehicle: `id`, `target`, `pos`, `part` (hit component, e.g. `head`) |
+| `proj_splash` | explosive projectile damaged a recorded unit or vehicle: `id`, `target` |
+| `proj_end` | projectile removed: `id`, `pos` (impact or end point), `exploded` |
 | `get_in` / `get_out` | `vehicle`, `unit`, `role` (`driver`, `gunner`, `cargo`) |
 | `group` | `unit`, `group`, `side` when a unit changes group or side |
 | `player` | `unit`, `uid`, `name` when a player takes or leaves a unit (empty `uid` = now AI) |
@@ -59,7 +62,9 @@ Example:
 {"type":"header","t":0,"version":1,"mission":"co40_assault","world":"Altis","started_utc":"2026-10-11T20:00:00Z","interval":1,"keyframe_interval":60,"multiplayer":true}
 {"type":"entity","t":1,"id":1,"kind":"unit","class":"B_Soldier_F","display":"Rifleman","side":"WEST","name":"Sebastian","group":"Alpha 1-1","player":true,"uid":"7656119..."}
 {"type":"snap","t":1,"key":true,"e":[[1,14520.4,16710.12,17.3,92,1,0,0]]}
-{"type":"fired","t":34.52,"unit":1,"weapon":"arifle_MX_F","muzzle":"arifle_MX_F","ammo":"B_65x39_Caseless","pos":[14530.1,16712.8,17.9]}
+{"type":"shot","t":34.52,"id":1,"shooter":1,"weapon":"arifle_MX_F","ammo":"B_65x39_Caseless","pos":[14530.1,16712.8,17.9],"vel":[880.2,-12.4,3.1]}
+{"type":"proj_hit","t":34.62,"id":1,"target":7,"pos":[14610.2,16700.5,19.6],"part":"head"}
+{"type":"proj_end","t":34.62,"id":1,"pos":[14610.2,16700.5,19.6],"exploded":false}
 {"type":"killed","t":35.1,"victim":7,"killer":1,"instigator":1,"pos":[14610.2,16700.5,18.1]}
 ```
 
@@ -72,15 +77,21 @@ class InterceptAAR {
     enabled = 1;            // 0 = do not record this mission
     interval = 1;           // seconds between snapshots
     keyframeInterval = 60;  // seconds between full snapshots
-    logFired = 1;           // one record per shot
+    logProjectiles = 1;     // shot / proj_hit / proj_splash / proj_end records
     logHits = 1;
     logMarkers = 1;
 };
 ```
 
+## How hits and projectiles are recorded
+
+Projectiles use the projectile event handlers added in Arma 3 2.10+ (`HitPart`, `HitExplosion`, `Explode`, `Deleted`) together with the `ProjectileCreated` mission event handler. Intercept does not wrap these yet, so the plugin registers an SQF command, `interceptAARProjectile`, and adds the handlers with a small SQF snippet that forwards to it.
+
+Shots are simulated on every machine, so the server's own copy of a player's bullet raises `HitPart` on the server too. That records hits on players on a dedicated server, which the old `Hit` event handler cannot do. `hit` is still logged for server-local units because it carries the damage amount.
+
 ## Known limitations
 
-- `Hit` only fires where the hit unit is local, so on a dedicated server hits on AI are recorded but hits on players are not. Kills are recorded for everyone.
-- `logFired` writes one line per round. Large firefights produce big files; turn it off if you only need movement and kills.
-- Projectiles are not tracked after they leave the barrel.
+- `logProjectiles` writes two or three lines per round. Large firefights produce big files; turn it off if you only need movement and kills.
+- Bullet impacts on terrain and buildings are not logged as hits, only as the `proj_end` position.
+- Requires Arma 3 2.18 or newer for `ProjectileCreated` and the projectile event handlers.
 - Intercept's upstream headers do not compile on Linux as-is, so the Linux server build is not supported yet. The plugin's own code was compile-checked against them with a few local header fixes.

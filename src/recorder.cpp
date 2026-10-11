@@ -74,7 +74,7 @@ std::string utc_stamp(const char* fmt) {
     return buf;
 }
 
-// Mission config overrides: class InterceptAAR { interval = 0.5; logFired = 0; ... }; in description.ext
+// Mission config overrides: class InterceptAAR { interval = 0.5; logProjectiles = 0; ... }; in description.ext
 settings read_settings() {
     settings s;
     sqf::config_entry root = sqf::config_entry(sqf::mission_config_file()) >> "InterceptAAR";
@@ -85,7 +85,7 @@ settings read_settings() {
     s.enabled = num("enabled", 1.f) != 0.f;
     s.interval = std::max(0.1f, num("interval", s.interval));
     s.keyframe_interval = std::max(s.interval, num("keyframeInterval", s.keyframe_interval));
-    s.log_fired = num("logFired", 1.f) != 0.f;
+    s.log_projectiles = num("logProjectiles", 1.f) != 0.f;
     s.log_hits = num("logHits", 1.f) != 0.f;
     s.log_markers = num("logMarkers", 1.f) != 0.f;
     if (const char* dir = std::getenv("AAR_OUTPUT_DIR"); dir && *dir) s.output_dir = dir;
@@ -99,6 +99,42 @@ const char* role_name(get_in_position p) {
         default: return "cargo";
     }
 }
+
+// Projectile event handlers are not wrapped by Intercept, so they are added in SQF and
+// forward to the interceptAARProjectile command that main.cpp registers.
+constexpr std::string_view projectile_script = R"sqf(
+addMissionEventHandler ["ProjectileCreated", {
+    params ["_projectile"];
+    (getShotParents _projectile) params [["_shooter", objNull], ["_instigator", objNull]];
+    private _weapon = "";
+    if (!isNull _shooter) then {
+        _weapon = if (_shooter isKindOf "CAManBase") then {
+            currentWeapon _shooter
+        } else {
+            private _turret = if (isNull _instigator) then { [-1] } else { _shooter unitTurret _instigator };
+            _shooter currentWeaponTurret _turret
+        };
+    };
+    interceptAARProjectile ["created", _projectile, _shooter, _instigator, _weapon, getPosASL _projectile, velocity _projectile];
+    _projectile addEventHandler ["HitPart", {
+        params ["_projectile", "_hitEntity", "", "_pos", "", "", "_components"];
+        interceptAARProjectile ["hit", _projectile, _hitEntity, _pos, _components];
+    }];
+    _projectile addEventHandler ["HitExplosion", {
+        params ["_projectile", "_hitEntity"];
+        interceptAARProjectile ["splash", _projectile, _hitEntity];
+    }];
+    _projectile addEventHandler ["Explode", {
+        (_this select 0) setVariable ["aar_exploded", true];
+    }];
+    _projectile addEventHandler ["Deleted", {
+        params ["_projectile"];
+        interceptAARProjectile ["end", _projectile, getPosASL _projectile, _projectile getVariable ["aar_exploded", false]];
+    }];
+}]
+)sqf";
+
+constexpr std::string_view projectile_var = "aar_pid";
 
 void log_rpt(const std::string& msg) { sqf::diag_log("[InterceptAAR] " + msg); }
 
@@ -139,6 +175,7 @@ void recorder::start() {
 
     active_ = true;
     next_id_ = 1;
+    next_projectile_id_ = 1;
     last_snapshot_ = last_keyframe_ = -1e9f;
     entities_.clear();
 
@@ -203,6 +240,10 @@ void recorder::attach_mission_handlers() {
         [this]() { pending_stop_ = "mp_ended"; }));
     mission_handlers_.push_back(addMissionEventHandler<eventhandlers_mission::Ended>(
         [this](r_string end_type) { pending_stop_ = "ended:" + to_std(end_type); }));
+
+    if (settings_.log_projectiles) {
+        projectile_eh_ = static_cast<int>(static_cast<float>(sqf::call(sqf::compile(std::string(projectile_script)))));
+    }
 
     if (settings_.log_markers) {
         mission_handlers_.push_back(addMissionEventHandler<eventhandlers_mission::MarkerCreated>(
@@ -285,24 +326,9 @@ int recorder::register_entity(const object& obj) {
 }
 
 void recorder::attach_object_handlers(int id, tracked& t) {
-    if (settings_.log_fired) {
-        t.handlers.push_back(addEventHandler<eventhandlers_object::Fired>(
-            t.obj, [this, id](object unit, r_string weapon, r_string muzzle, r_string, r_string ammo, r_string, object, object gunner) {
-                auto pos = sqf::get_pos_asl(unit);
-                json_line line("fired", now());
-                line.field("unit", id);
-                int gunner_id = id_of(gunner);
-                if (gunner_id && gunner_id != id) line.field("gunner", gunner_id);
-                emit(line.field("weapon", std::string_view(weapon))
-                         .field("muzzle", std::string_view(muzzle))
-                         .field("ammo", std::string_view(ammo))
-                         .field_pos("pos", pos.x, pos.y, pos.z)
-                         .finish());
-            }));
-    }
-
     if (settings_.log_hits) {
-        // Hit only fires where the unit is local: AI on the server, not remote players.
+        // Hit only fires where the unit is local (AI on the server). Hits on remote players
+        // come from the projectile HitPart handler instead, which fires on the server's copy of every shot.
         t.handlers.push_back(addEventHandler<eventhandlers_object::Hit>(
             t.obj, [this, id](object, object caused_by, float damage, object instigator) {
                 emit(json_line("hit", now())
@@ -323,6 +349,58 @@ void recorder::attach_object_handlers(int id, tracked& t) {
             t.obj, [this, id](object, get_in_position position, object unit, types::rv_turret_path) {
                 emit(json_line("get_out", now()).field("vehicle", id).field("unit", id_of(unit)).field("role", role_name(position)).finish());
             }));
+    }
+}
+
+void recorder::on_projectile_event(const game_value& args) {
+    if (!active_ || args.size() < 2) return;
+    std::string kind = args[0];
+    object projectile(args[1]);
+    if (projectile.is_null()) return;
+
+    if (kind == "created") {
+        if (args.size() < 7) return;
+        int pid = next_projectile_id_++;
+        sqf::set_variable(projectile, std::string(projectile_var), game_value(static_cast<float>(pid)));
+        vector3 pos = args[5];
+        vector3 vel = args[6];
+        int shooter = id_of(object(args[2]));
+        int instigator = id_of(object(args[3]));
+        json_line line("shot", now());
+        line.field("id", pid).field("shooter", shooter);
+        if (instigator && instigator != shooter) line.field("instigator", instigator);
+        emit(line.field("weapon", static_cast<std::string>(args[4]))
+                 .field("ammo", to_std(sqf::type_of(projectile)))
+                 .field_pos("pos", pos.x, pos.y, pos.z)
+                 .field_pos("vel", vel.x, vel.y, vel.z)
+                 .finish());
+        return;
+    }
+
+    float pid_f = sqf::get_variable(projectile, std::string(projectile_var), game_value(0.f));
+    int pid = static_cast<int>(pid_f);
+    if (pid <= 0) return;
+
+    if (kind == "hit" || kind == "splash") {
+        // Only hits on recorded units and vehicles; bullets striking terrain or buildings are not logged.
+        int target = known_id(object(args[2]));
+        if (target <= 0) return;
+        json_line line(kind == "hit" ? "proj_hit" : "proj_splash", now());
+        line.field("id", pid).field("target", target);
+        if (kind == "hit" && args.size() >= 5) {
+            vector3 pos = args[3];
+            line.field_pos("pos", pos.x, pos.y, pos.z);
+            auto& parts = args[4].to_array();
+            if (!parts.empty()) line.field("part", static_cast<std::string>(parts[0]));
+        }
+        emit(line.finish());
+    } else if (kind == "end" && args.size() >= 4) {
+        vector3 pos = args[2];
+        emit(json_line("proj_end", now())
+                 .field("id", pid)
+                 .field_pos("pos", pos.x, pos.y, pos.z)
+                 .field("exploded", static_cast<bool>(args[3]))
+                 .finish());
     }
 }
 
@@ -434,8 +512,12 @@ void recorder::stop(std::string_view reason) {
     if (!active_) return;
     active_ = false;
     if (!pending_stop_.empty()) reason = pending_stop_;
-    emit(json_line("end", now()).field("reason", reason).field("entities", next_id_ - 1).finish());
+    emit(json_line("end", now()).field("reason", reason).field("entities", next_id_ - 1).field("projectiles", next_projectile_id_ - 1).finish());
     mission_handlers_.clear();
+    if (projectile_eh_ >= 0) {
+        sqf::remove_mission_event_handler("ProjectileCreated", projectile_eh_);
+        projectile_eh_ = -1;
+    }
     entities_.clear();  // drops the object event handlers
     out_.close();
     log_rpt("stopped (" + std::string(reason) + "), wrote " + path_);

@@ -21,7 +21,7 @@ struct settings {
     bool enabled = true;
     float interval = 1.0f;            // seconds of mission time between snapshots
     float keyframe_interval = 60.0f;  // full (non-delta) snapshot every N seconds
-    bool log_fired = true;            // one record per shot; can be large in big firefights
+    bool log_projectiles = true;      // shot, hit and impact records; large in big firefights
     bool log_hits = true;
     bool log_markers = true;
     std::string output_dir;           // empty = <arma working dir>/aar
@@ -35,6 +35,8 @@ public:
     void attach_mission_handlers();
     // Call every frame; takes a snapshot whenever the interval has elapsed.
     void on_frame();
+    // Called by the interceptAARProjectile SQF command: [kind, projectile, ...].
+    void on_projectile_event(const intercept::types::game_value& args);
     // Call when the mission ends or the plugin unloads.
     void stop(std::string_view reason);
 
@@ -69,6 +71,8 @@ private:
     async_writer out_;
     bool active_ = false;
     int next_id_ = 1;
+    int next_projectile_id_ = 1;
+    int projectile_eh_ = -1;
     float last_snapshot_ = -1e9f;
     float last_keyframe_ = -1e9f;
     std::unordered_map<int, tracked> entities_;
