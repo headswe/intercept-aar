@@ -71,6 +71,12 @@ Example:
 {"type":"killed","t":35.1,"victim":7,"killer":1,"instigator":1,"pos":[14610.2,16700.5,18.1]}
 ```
 
+## Viewing a recording
+
+Open `viewer/aar-viewer.html` in a browser and drop a `.jsonl` recording on it, or use **Open recording**. It plays the mission back on a gridded map with Arma grid references: units and vehicles with facing, crew counts and players ringed, tracers from `shot` to `proj_end`, hit flashes and kill sites. The side panel has a filterable event feed (click an event to jump to it) and a unit roster by side and group; click a unit on the map or roster to see its status and follow it. Space plays and pauses, the arrow keys skip 5 s (30 s with Shift), and `[` / `]` change speed.
+
+The page is generated from `viewer/viewer.body.html` by `viewer/build.py`; pass a recording to embed it as the example that opens with the page.
+
 ## Mission settings
 
 Add this to a mission's `description.ext` to change the defaults (all optional):
