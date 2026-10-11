@@ -5,6 +5,7 @@
 #include <cstdlib>
 #include <ctime>
 #include <filesystem>
+#include <algorithm>
 #include <unordered_set>
 
 #include "json_line.hpp"
@@ -116,6 +117,10 @@ addMissionEventHandler ["ProjectileCreated", {
         };
     };
     interceptAARProjectile ["created", _projectile, _shooter, _instigator, _weapon, getPosASL _projectile, velocity _projectile];
+    _projectile addEventHandler ["SubmunitionCreated", {
+        params ["_projectile", "_submunition"];
+        interceptAARProjectile ["sub", _projectile, _submunition];
+    }];
     _projectile addEventHandler ["HitPart", {
         params ["_projectile", "_hitEntity", "", "_pos", "", "", "_components"];
         interceptAARProjectile ["hit", _projectile, _hitEntity, _pos, _components];
@@ -135,6 +140,7 @@ addMissionEventHandler ["ProjectileCreated", {
 )sqf";
 
 constexpr std::string_view projectile_var = "aar_pid";
+constexpr std::string_view parent_var = "aar_parent";
 
 void log_rpt(const std::string& msg) { sqf::diag_log("[InterceptAAR] " + msg); }
 
@@ -176,6 +182,7 @@ void recorder::start() {
     active_ = true;
     next_id_ = 1;
     next_projectile_id_ = 1;
+    projectiles_.clear();
     last_snapshot_ = last_keyframe_ = -1e9f;
     entities_.clear();
 
@@ -366,9 +373,19 @@ void recorder::on_projectile_event(const game_value& args) {
         vector3 vel = args[6];
         int shooter = id_of(object(args[2]));
         int instigator = id_of(object(args[3]));
+        // Submunitions (artillery and smoke shells, cluster bomblets) have no shot parents of their own;
+        // if the parent's SubmunitionCreated ran first it left the parent id on the projectile.
+        float parent_f = sqf::get_variable(projectile, std::string(parent_var), game_value(0.f));
+        int parent = static_cast<int>(parent_f);
+        if (parent > 0 && shooter == 0) {
+            auto it = projectiles_.find(parent);
+            if (it != projectiles_.end()) shooter = it->second.shooter;
+        }
+        projectiles_[pid].shooter = shooter;
         json_line line("shot", now());
         line.field("id", pid).field("shooter", shooter);
         if (instigator && instigator != shooter) line.field("instigator", instigator);
+        if (parent > 0) line.field("parent", parent);
         emit(line.field("weapon", static_cast<std::string>(args[4]))
                  .field("ammo", to_std(sqf::type_of(projectile)))
                  .field_pos("pos", pos.x, pos.y, pos.z)
@@ -381,10 +398,27 @@ void recorder::on_projectile_event(const game_value& args) {
     int pid = static_cast<int>(pid_f);
     if (pid <= 0) return;
 
-    if (kind == "hit" || kind == "splash") {
+    if (kind == "sub" && args.size() >= 3) {
+        object submunition(args[2]);
+        if (submunition.is_null()) return;
+        float sub_f = sqf::get_variable(submunition, std::string(projectile_var), game_value(0.f));
+        int sub = static_cast<int>(sub_f);
+        if (sub <= 0) {
+            // ProjectileCreated has not run for it yet; it will pick the parent up from this variable.
+            sqf::set_variable(submunition, std::string(parent_var), game_value(static_cast<float>(pid)));
+            return;
+        }
+        int shooter = projectiles_.count(pid) ? projectiles_[pid].shooter : 0;
+        if (projectiles_.count(sub)) projectiles_[sub].shooter = shooter;
+        emit(json_line("submunition", now()).field("id", sub).field("parent", pid).field("shooter", shooter).finish());
+    } else if (kind == "hit" || kind == "splash") {
         // Only hits on recorded units and vehicles; bullets striking terrain or buildings are not logged.
         int target = known_id(object(args[2]));
         if (target <= 0) return;
+        // HitPart fires once per component a bullet passes through; keep only the first per target.
+        auto& hit = projectiles_[pid].hit_targets;
+        if (std::find(hit.begin(), hit.end(), target) != hit.end()) return;
+        hit.push_back(target);
         json_line line(kind == "hit" ? "proj_hit" : "proj_splash", now());
         line.field("id", pid).field("target", target);
         if (kind == "hit" && args.size() >= 5) {
@@ -401,6 +435,7 @@ void recorder::on_projectile_event(const game_value& args) {
                  .field_pos("pos", pos.x, pos.y, pos.z)
                  .field("exploded", static_cast<bool>(args[3]))
                  .finish());
+        projectiles_.erase(pid);
     }
 }
 
