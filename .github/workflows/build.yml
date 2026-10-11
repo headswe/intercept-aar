@@ -16,7 +16,13 @@ jobs:
         run: cmake -S . -B out -A x64
       - name: Build
         run: cmake --build out --config Release
+      - name: Package mod
+        run: python tools/pack_mod.py build/win64/Release/intercept_aar_x64.dll out/mod
       - uses: actions/upload-artifact@v4
         with:
           name: intercept_aar_x64
           path: build/win64/Release/intercept_aar_x64.dll
+      - uses: actions/upload-artifact@v4
+        with:
+          name: "@intercept_aar"
+          path: out/mod

@@ -16,15 +16,17 @@ The DLL lands in `build/win64/Release/intercept_aar_x64.dll`. The GitHub Actions
 
 ## Installing
 
-1. Load the Intercept mod (`@intercept`, from the Steam Workshop or the [Intercept releases](https://github.com/intercept/intercept/releases)) on the server.
-2. Build the addon PBO from `addons/main` (`hemtt build`, or Addon Builder with prefix `z\intercept_aar\addons\main`).
-3. Lay out the mod like this and load it on the server next to `@intercept`:
+Every build on GitHub Actions uploads an `@intercept_aar` artifact: the finished mod folder with the PBO and DLL in place. To assemble it yourself after building, run `python tools/pack_mod.py build/win64/Release/intercept_aar_x64.dll out`.
 
 ```
 @intercept_aar/
   addons/intercept_aar_main.pbo
   intercept/intercept_aar_x64.dll
 ```
+
+1. Get the Intercept mod (`@intercept`) from the Steam Workshop or the [Intercept releases](https://github.com/intercept/intercept/releases).
+2. Start the server with both: `arma3server_x64.exe -serverMod=@intercept;@intercept_aar ...`. For a local test in the editor or singleplayer, use `-mod=@intercept;@intercept_aar` on the game instead.
+3. Play a mission. The RPT log shows `[InterceptAAR] recording to ...` and the file appears under `aar\` in the Arma folder.
 
 Only the server records; clients do not need the mod. In singleplayer or a hosted game the host records.
 
