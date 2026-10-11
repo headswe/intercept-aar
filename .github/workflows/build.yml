@@ -1,0 +1,22 @@
+name: build
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Configure
+        run: cmake -S . -B out -A x64
+      - name: Build
+        run: cmake --build out --config Release
+      - uses: actions/upload-artifact@v4
+        with:
+          name: intercept_aar_x64
+          path: build/win64/Release/intercept_aar_x64.dll
