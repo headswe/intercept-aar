@@ -3,7 +3,8 @@
  * or a hosted game the host records.
  *
  * Mission settings in description.ext (all optional; class InterceptAAR is read too):
- *   class AAR { enabled = 1; interval = 1; keyframeInterval = 60; logProjectiles = 1; logHits = 1; logMarkers = 1; };
+ *   class AAR { enabled = 1; interval = 1; keyframeInterval = 60; logProjectiles = 1; logHits = 1; logMarkers = 1;
+ *               frameBudget = 2; spikeThreshold = 100; };
  */
 if (!isServer) exitWith {};
 aar_active = false;
@@ -22,6 +23,8 @@ aar_keyframeInterval = (["keyframeInterval", 60] call _setting) max aar_interval
 aar_logProjectiles = (["logProjectiles", 1] call _setting) != 0;
 aar_logHits = (["logHits", 1] call _setting) != 0;
 aar_logMarkers = (["logMarkers", 1] call _setting) != 0;
+aar_frameBudget = (["frameBudget", 2] call _setting) max 0.1;          // ms of recorder work per frame
+aar_spikeThreshold = (["spikeThreshold", 100] call _setting) max 1;  // ms; slower server frames are logged
 
 private _result = "arma_aar" callExtension ["open", [missionName, worldName]];
 _result params ["_output", "_code"];
@@ -39,6 +42,10 @@ aar_nextId = 1;
 aar_nextPid = 1;
 aar_lastSnapshot = -1e9;
 aar_lastKeyframe = -1e9;
+aar_snap = [];          // snapshot in progress, see aar_fnc_snapshot
+aar_snapStats = [0, 0, 0];
+aar_batch = 100;        // entities per frame, adjusted to stay within aar_frameBudget
+aar_lastWorkMs = 0;
 
 ["header", [
     "version", "1",
@@ -50,17 +57,7 @@ aar_lastKeyframe = -1e9;
     "multiplayer", toJSON isMultiplayer
 ]] call aar_fnc_rec;
 
-addMissionEventHandler ["EachFrame", {
-    if (!aar_active) exitWith {};
-    private _t = time;
-    if (_t - aar_lastSnapshot >= aar_interval) then {
-        aar_lastSnapshot = _t;
-        private _keyframe = _t - aar_lastKeyframe >= aar_keyframeInterval;
-        if (_keyframe) then { aar_lastKeyframe = _t };
-        [_keyframe] call aar_fnc_snapshot;
-    };
-    call aar_fnc_flush;
-}];
+addMissionEventHandler ["EachFrame", { call aar_fnc_frame }];
 
 addMissionEventHandler ["EntityKilled", {
     params ["_killed", "_killer", "_instigator"];

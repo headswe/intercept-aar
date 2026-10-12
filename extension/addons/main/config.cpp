@@ -26,6 +26,7 @@ class CfgFunctions {
             class snapshot {};
             class projectile {};
             class flush {};
+            class frame {};
             class stop {};
         };
     };

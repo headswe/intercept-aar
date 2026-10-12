@@ -3,11 +3,11 @@
  * booleans and small integers, toFixed for decimals, aar_fnc_pos for positions.
  * The extension trims the numbers when it writes the line.
  *
- * Arguments: 0: type <STRING>, 1: [key, value, key, value, ...] <ARRAY>
+ * Arguments: 0: type <STRING>, 1: [key, value, key, value, ...] <ARRAY>, 2: mission time (default: now) <NUMBER>
  */
-params ["_type", ["_fields", []]];
+params ["_type", ["_fields", []], ["_time", time]];
 
-private _parts = ['{"type":"', _type, '","t":', time toFixed 2];
+private _parts = ['{"type":"', _type, '","t":', _time toFixed 2];
 for "_i" from 0 to (count _fields - 2) step 2 do {
     _parts append [',"', _fields select _i, '":', _fields select (_i + 1)];
 };

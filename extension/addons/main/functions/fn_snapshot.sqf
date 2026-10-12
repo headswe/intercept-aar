@@ -1,20 +1,20 @@
 /*
- * Registers new units and vehicles, then writes a snapshot of every entity that changed
- * (or of all of them on a keyframe). Also writes group, side and player changes.
+ * Advances the snapshot in progress (aar_snap, started by aar_fnc_frame) by up to aar_batch
+ * entities, so a large mission spreads the work over several frames instead of one spike.
+ * When every entity is done, writes the snap record (timed at the snapshot's start) and the
+ * deleted records. Also writes group, side and player changes as it goes.
  *
- * Arguments: 0: keyframe <BOOL>
+ * Returns: true when the snapshot is finished <BOOL>
  */
-params ["_keyframe"];
+aar_snap params ["_start", "_keyframe", "_ids", "_index", "_rows", "_deleted"];
+private _end = (_index + aar_batch) min count _ids;
 
-{ _x call aar_fnc_id } forEach allUnits;
-{ _x call aar_fnc_id } forEach vehicles;
-
-private _rows = [];
-private _deleted = [];
-{
-    _y params ["_obj", "_kind", "_group", "_side", "_uid", "_last"];
+for "_i" from _index to _end - 1 do {
+    private _id = _ids select _i;
+    private _entry = aar_entities get _id;
+    _entry params ["_obj", "_kind", "_group", "_side", "_uid", "_last"];
     if (isNull _obj) then {
-        _deleted pushBack _x;
+        _deleted pushBack _id;
     } else {
         private _pos = getPosASL _obj;
         private _dir = getDir _obj;
@@ -23,7 +23,7 @@ private _deleted = [];
         private _vehicle = 0;
         if (_kind isEqualTo "unit") then {
             private _veh = vehicle _obj;
-            // Lookup only: registering here would change aar_entities while we iterate it.
+            // Lookup only: vehicles are registered by the discovery pass in aar_fnc_frame.
             if (_veh != _obj) then { _vehicle = _veh call aar_fnc_knownId };
 
             // Group, side and player changes are rare, so they are events rather than snapshot columns.
@@ -31,14 +31,14 @@ private _deleted = [];
                 private _newGroup = if (isNull group _obj) then { "" } else { groupId group _obj };
                 private _newSide = str side _obj;
                 if (_newGroup isNotEqualTo _group || _newSide isNotEqualTo _side) then {
-                    _y set [2, _newGroup];
-                    _y set [3, _newSide];
-                    ["group", ["unit", toJSON _x, "group", toJSON _newGroup, "side", toJSON _newSide]] call aar_fnc_rec;
+                    _entry set [2, _newGroup];
+                    _entry set [3, _newSide];
+                    ["group", ["unit", toJSON _id, "group", toJSON _newGroup, "side", toJSON _newSide]] call aar_fnc_rec;
                 };
                 private _newUid = if (isPlayer _obj) then { getPlayerUID _obj } else { "" };
                 if (_newUid isNotEqualTo _uid) then {
-                    _y set [4, _newUid];
-                    ["player", ["unit", toJSON _x, "uid", toJSON _newUid, "name", toJSON name _obj]] call aar_fnc_rec;
+                    _entry set [4, _newUid];
+                    ["player", ["unit", toJSON _id, "uid", toJSON _newUid, "name", toJSON name _obj]] call aar_fnc_rec;
                 };
             };
         };
@@ -50,10 +50,10 @@ private _deleted = [];
                 || {abs (_dir - _ldir) > 1} || {abs (_damage - _ldamage) > 0.01}
         };
         if (_changed) then {
-            _y set [5, [_pos select 0, _pos select 1, _pos select 2, _dir, _alive, _damage, _vehicle]];
+            _entry set [5, [_pos select 0, _pos select 1, _pos select 2, _dir, _alive, _damage, _vehicle]];
             // [id, x, y, z, dir, alive, damage, vehicle_id]
             _rows pushBack format ["[%1,%2,%3,%4,%5,%6,%7,%8]",
-                _x,
+                _id,
                 (_pos select 0) toFixed 2, (_pos select 1) toFixed 2, (_pos select 2) toFixed 2,
                 (round _dir) mod 360,
                 [0, 1] select _alive,
@@ -62,11 +62,13 @@ private _deleted = [];
             ];
         };
     };
-} forEach aar_entities;
+};
+aar_snap set [3, _end];
+if (_end < count _ids) exitWith {false};
 
-["snap", ["key", toJSON _keyframe, "e", "[" + (_rows joinString ",") + "]"]] call aar_fnc_rec;
-
+["snap", ["key", toJSON _keyframe, "e", "[" + (_rows joinString ",") + "]"], _start] call aar_fnc_rec;
 {
     ["deleted", ["id", toJSON _x]] call aar_fnc_rec;
     aar_entities deleteAt _x;
 } forEach _deleted;
+true

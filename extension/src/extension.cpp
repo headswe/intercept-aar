@@ -1,12 +1,15 @@
 // Arma 3 callExtension entry points for the AAR recorder.
 //
 //   "arma_aar" callExtension ["open", [missionName, worldName]]  -> ["<file path>","<started utc>"]
-//   "arma_aar" callExtension ["write", [records]]                 -> appends records (see sqf_json.hpp)
+//   "arma_aar" callExtension "tick"                               -> starts a timer on the game thread
+//   "arma_aar" callExtension ["write", [records]]                 -> appends records (see sqf_json.hpp); returns the
+//                                                                    microseconds since "tick", if one is pending
 //   "arma_aar" callExtension ["close", []]
 //   "arma_aar" callExtension "version"
 //
 // All calls come from the game thread; the file is written on a background thread.
 
+#include <chrono>
 #include <cstdlib>
 #include <cstring>
 #include <ctime>
@@ -46,6 +49,10 @@ aar::async_writer& writer() {
     static auto* w = new aar::async_writer();
     return *w;
 }
+
+// Measures the recorder's own work in a frame: "tick" at the start, the next "write" reads it.
+std::chrono::steady_clock::time_point tick_time;
+bool tick_pending = false;
 
 void set_output(char* output, unsigned int size, std::string_view text) {
     if (size == 0) return;
@@ -110,7 +117,14 @@ int open_file(char* output, unsigned int size, const char** argv, unsigned int a
 void AAR_CALL RVExtensionVersion(char* output, unsigned int output_size) { set_output(output, output_size, AAR_VERSION); }
 
 void AAR_CALL RVExtension(char* output, unsigned int output_size, const char* function) {
-    set_output(output, output_size, std::string_view(function) == "version" ? AAR_VERSION : "");
+    std::string_view fn(function);
+    if (fn == "tick") {
+        tick_time = std::chrono::steady_clock::now();
+        tick_pending = true;
+        set_output(output, output_size, "");
+        return;
+    }
+    set_output(output, output_size, fn == "version" ? AAR_VERSION : "");
 }
 
 int AAR_CALL RVExtensionArgs(char* output, unsigned int output_size, const char* function, const char** argv, unsigned int argc) {
@@ -125,6 +139,11 @@ int AAR_CALL RVExtensionArgs(char* output, unsigned int output_size, const char*
         std::string json;
         for (unsigned int i = 0; i < argc; ++i) aar::sqf_records_to_json(aar::unquote_sqf(argv[i]), json);
         writer().write(std::move(json));
+        if (tick_pending) {
+            tick_pending = false;
+            auto us = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - tick_time).count();
+            set_output(output, output_size, std::to_string(us));
+        }
         return ok;
     }
     if (fn == "close") {
