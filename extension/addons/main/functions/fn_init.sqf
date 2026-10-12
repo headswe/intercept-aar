@@ -36,6 +36,13 @@ if (_output isEqualTo "" && _code == 0) exitWith {
 if (_code != 0) exitWith { diag_log format ["[AAR] %1", _output] };
 (parseSimpleArray _output) params ["_path", "_startedUtc"];
 
+private _missionText = {
+    params ["_key"];
+    private _text = getMissionConfigValue [_key, ""];
+    if !(_text isEqualType "") then { _text = str _text };
+    if (_text select [0, 5] == "$STR_") then { localize (_text select [1]) } else { _text }
+};
+
 aar_path = _path;
 aar_buffer = [];
 aar_entities = createHashMap;
@@ -57,7 +64,22 @@ aar_idle = false;
     "started_utc", toJSON _startedUtc,
     "interval", aar_interval toFixed 2,
     "keyframe_interval", aar_keyframeInterval toFixed 2,
-    "multiplayer", toJSON isMultiplayer
+    "multiplayer", toJSON isMultiplayer,
+    // Mission metadata (this version only). Text from description.ext is localized when it is a $STR key.
+    "briefing_name", toJSON briefingName,
+    "on_load_name", toJSON (["onLoadName"] call _missionText),
+    "author", toJSON (["author"] call _missionText),
+    "overview", toJSON (["overviewText"] call _missionText),
+    "game_type", toJSON getText (missionConfigFile >> "Header" >> "gameType"),
+    "max_players", toJSON getNumber (missionConfigFile >> "Header" >> "maxPlayers"),
+    "server_name", toJSON serverName,
+    "world_name", toJSON getText (configFile >> "CfgWorlds" >> worldName >> "description"),
+    "world_size", toJSON worldSize,
+    "date", toJSON date,
+    "time_multiplier", timeMultiplier toFixed 2,
+    "weather", toJSON [overcast, fog, rain],
+    "game_version", toJSON (productVersion select [2, 2]),
+    "mods", toJSON ((getLoadedModsInfo select { !(_x select 3) }) apply { _x select 1 })
 ]] call aar_fnc_rec;
 
 addMissionEventHandler ["EachFrame", { call aar_fnc_frame }];
