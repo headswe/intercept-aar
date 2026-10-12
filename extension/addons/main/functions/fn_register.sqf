@@ -74,11 +74,26 @@ if (!_isUnit) then {
         ["get_in", ["vehicle", toJSON (_vehicle call aar_fnc_knownId), "unit", toJSON (_unit call aar_fnc_id), "role", toJSON _role]] call aar_fnc_rec;
     }];
     _obj addEventHandler ["GetOut", {
-        params ["_vehicle", "_role", "_unit"];
+        params ["_vehicle", "_role", "_unit", "", ["_isEject", false]];
         if (!aar_active) exitWith {};
         _role = toLowerANSI _role;
         if !(_role in ["driver", "gunner"]) then { _role = "cargo" };
-        ["get_out", ["vehicle", toJSON (_vehicle call aar_fnc_knownId), "unit", toJSON (_unit call aar_fnc_id), "role", toJSON _role]] call aar_fnc_rec;
+        private _fields = ["vehicle", toJSON (_vehicle call aar_fnc_knownId), "unit", toJSON (_unit call aar_fnc_id), "role", toJSON _role];
+        if (_isEject) then { _fields append ["eject", "true"] };
+        ["get_out", _fields] call aar_fnc_rec;
+    }];
+    // Moving between seats inside the vehicle raises neither GetIn nor GetOut.
+    _obj addEventHandler ["SeatSwitched", {
+        params ["_vehicle", "_unit1", "_unit2"];
+        if (!aar_active) exitWith {};
+        {
+            if (!isNull _x) then {
+                private _role = toLowerANSI ((assignedVehicleRole _x) param [0, "cargo"]);
+                if (_role isEqualTo "turret") then { _role = "gunner" };
+                if !(_role in ["driver", "gunner"]) then { _role = "cargo" };
+                ["seat", ["vehicle", toJSON (_vehicle call aar_fnc_knownId), "unit", toJSON (_x call aar_fnc_id), "role", toJSON _role]] call aar_fnc_rec;
+            };
+        } forEach [_unit1, _unit2];
     }];
 };
 

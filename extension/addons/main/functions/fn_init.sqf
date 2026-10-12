@@ -61,6 +61,32 @@ aar_idle = false;
 
 addMissionEventHandler ["EachFrame", { call aar_fnc_frame }];
 
+addMissionEventHandler ["EntityCreated", {
+    params ["_entity"];
+    if (!aar_active) exitWith {};
+    _entity call aar_fnc_id;
+}];
+
+addMissionEventHandler ["EntityDeleted", {
+    params ["_entity"];
+    if (!aar_active) exitWith {};
+    private _id = _entity call aar_fnc_knownId;
+    if (_id == 0) exitWith {};
+    ["deleted", ["id", toJSON _id]] call aar_fnc_rec;
+    aar_entities deleteAt _id;
+}];
+
+addMissionEventHandler ["BuildingChanged", {
+    params ["_from", "_to", "_isRuin"];
+    if (!aar_active) exitWith {};
+    ["building", [
+        "from", toJSON typeOf _from,
+        "to", toJSON typeOf _to,
+        "ruin", toJSON _isRuin,
+        "pos", (getPosASL ([_to, _from] select isNull _to)) call aar_fnc_pos
+    ]] call aar_fnc_rec;
+}];
+
 addMissionEventHandler ["EntityKilled", {
     params ["_killed", "_killer", "_instigator"];
     if (!aar_active) exitWith {};
@@ -159,9 +185,11 @@ if (aar_logMarkers) then {
         ]] call aar_fnc_rec;
     }];
     addMissionEventHandler ["MarkerDeleted", {
-        params ["_marker"];
+        params ["_marker", "", ["_deleter", objNull]];
         if (!aar_active) exitWith {};
-        ["marker_deleted", ["marker", toJSON _marker]] call aar_fnc_rec;
+        private _fields = ["marker", toJSON _marker];
+        if (!isNull _deleter) then { _fields append ["by", toJSON (_deleter call aar_fnc_id)] };
+        ["marker_deleted", _fields] call aar_fnc_rec;
     }];
 };
 

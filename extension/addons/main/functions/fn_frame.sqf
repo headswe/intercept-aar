@@ -39,10 +39,13 @@ if (!_working && {!aar_idle} && {_t - aar_lastSnapshot >= aar_interval}) then {
     private _keyframe = _t - aar_lastKeyframe >= aar_keyframeInterval;
     if (_keyframe) then { aar_lastKeyframe = _t };
     "arma_aar" callExtension "tick";
-    // Register anything new; one getVariable per object, the rest is skipped.
-    {
-        if ((_x getVariable ["aar_id", 0]) == 0) then { _x call aar_fnc_register };
-    } forEach (allUnits + vehicles);
+    // EntityCreated registers new objects as they appear; this sweep on keyframes only
+    // catches anything created before the handler was added or that it missed.
+    if (_keyframe) then {
+        {
+            if ((_x getVariable ["aar_id", 0]) == 0) then { _x call aar_fnc_register };
+        } forEach (allUnits + vehicles);
+    };
     aar_snap = [_t, _keyframe, keys aar_entities, 0, [], []];
     aar_snapStats = [0, 0, 0];  // frames, total ms, max ms
     _working = true;

@@ -11,8 +11,9 @@ private _end = (_index + aar_batch) min count _ids;
 
 for "_i" from _index to _end - 1 do {
     private _id = _ids select _i;
-    private _entry = aar_entities get _id;
-    _entry params ["_obj", "_kind", "_group", "_side", "_uid", "_last"];
+    private _entry = aar_entities getOrDefault [_id, []];  // [] once EntityDeleted removed it
+    _entry params [["_obj", objNull], "_kind", "_group", "_side", "_uid", "_last"];
+    if (_entry isEqualTo []) then { continue };  // already written as deleted
     if (isNull _obj) then {
         _deleted pushBack _id;
     } else {

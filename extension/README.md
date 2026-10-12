@@ -52,13 +52,15 @@ Every line is a JSON object with `type` and `t` (mission time in seconds, from `
 | `proj_hit` | projectile directly hit a recorded unit or vehicle: `id`, `target`, `pos`, `part` (component hit, e.g. `head`); one line per component the projectile passes through, so consecutive lines trace penetration |
 | `proj_splash` | explosive projectile damaged a recorded unit or vehicle: `id`, `target` |
 | `proj_end` | projectile removed: `id`, `pos` (impact or end point), `exploded` |
-| `get_in` / `get_out` | `vehicle`, `unit`, `role` (`driver`, `gunner`, `cargo`) |
+| `get_in` / `get_out` | `vehicle`, `unit`, `role` (`driver`, `gunner`, `cargo`); in this version `get_out` has `eject: true` for ejections |
+| `seat` | `vehicle`, `unit`, `role`: a unit moved to another seat inside the vehicle (this version only) |
 | `group` | `unit`, `group`, `side` when a unit changes group or side |
 | `player` | `unit`, `uid`, `name` when a player takes or leaves a unit (empty `uid` = now AI) |
 | `respawn` | `new`, `old` |
 | `connected` / `disconnected` | `uid`, `name`, `jip`, `owner` |
-| `marker_created` / `marker_updated` / `marker_deleted` | `marker`, plus `text`, `markerType`, `color`, `channel`, `owner`, `pos` where available |
+| `marker_created` / `marker_updated` / `marker_deleted` | `marker`, plus `text`, `markerType`, `color`, `channel`, `owner`, `pos` where available; in this version `marker_deleted` has `by` (who deleted it) when known |
 | `deleted` | `id` when an entity is removed from the world |
+| `building` | a building or wall changed model, usually destroyed: `from`, `to` (classes), `ruin`, `pos` (this version only) |
 | `end` | `reason`, `entities` |
 | `perf` | once per snapshot (this version only): server `fps`, `fps_min`, `units`, `entities`, `projectiles` in flight, and the recorder's own snapshot cost: `snap_frames` (frames it was spread over), `snap_ms` (total), `snap_max_ms` (worst frame), `batch` (entities per frame) |
 | `idle` | `idle`: true when a dedicated server has no players left and snapshots stop, false when someone joins again (this version only) |
@@ -126,6 +128,7 @@ Before settling on this design we read OCAP2, R3 and Anrop's AAR addon. This one
 - No scheduled script per projectile or per unit; everything runs in event handlers and one `EachFrame` handler (all three).
 - Extension output is never `compile`d (R3), and the file is local, so there is no upload that can drop data or leak a token (Anrop, OCAP).
 - Snapshots stop while a dedicated server is empty (R3, OCAP).
+- New units and vehicles are registered by `EntityCreated` and removed by `EntityDeleted` the moment it happens, instead of scanning `allUnits` every second (R3, Anrop); a sweep on each keyframe is the safety net.
 
 ## Known limitations
 
