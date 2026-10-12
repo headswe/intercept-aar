@@ -1,7 +1,7 @@
 /*
- * Queues one record. Values in _fields must already be JSON text: str for strings,
+ * Queues one record. Values in _fields must already be JSON text: toJSON for strings,
  * booleans and small integers, toFixed for decimals, aar_fnc_pos for positions.
- * The extension fixes SQF's string quoting when it writes the line.
+ * The extension trims the numbers when it writes the line.
  *
  * Arguments: 0: type <STRING>, 1: [key, value, key, value, ...] <ARRAY>
  */

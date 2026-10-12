@@ -33,12 +33,12 @@ private _deleted = [];
                 if (_newGroup isNotEqualTo _group || _newSide isNotEqualTo _side) then {
                     _y set [2, _newGroup];
                     _y set [3, _newSide];
-                    ["group", ["unit", str _x, "group", str _newGroup, "side", str _newSide]] call aar_fnc_rec;
+                    ["group", ["unit", toJSON _x, "group", toJSON _newGroup, "side", toJSON _newSide]] call aar_fnc_rec;
                 };
                 private _newUid = if (isPlayer _obj) then { getPlayerUID _obj } else { "" };
                 if (_newUid isNotEqualTo _uid) then {
                     _y set [4, _newUid];
-                    ["player", ["unit", str _x, "uid", str _newUid, "name", str name _obj]] call aar_fnc_rec;
+                    ["player", ["unit", toJSON _x, "uid", toJSON _newUid, "name", toJSON name _obj]] call aar_fnc_rec;
                 };
             };
         };
@@ -64,9 +64,9 @@ private _deleted = [];
     };
 } forEach aar_entities;
 
-["snap", ["key", str _keyframe, "e", "[" + (_rows joinString ",") + "]"]] call aar_fnc_rec;
+["snap", ["key", toJSON _keyframe, "e", "[" + (_rows joinString ",") + "]"]] call aar_fnc_rec;
 
 {
-    ["deleted", ["id", str _x]] call aar_fnc_rec;
+    ["deleted", ["id", toJSON _x]] call aar_fnc_rec;
     aar_entities deleteAt _x;
 } forEach _deleted;

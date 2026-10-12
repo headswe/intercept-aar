@@ -37,14 +37,14 @@ private _uid = if (isPlayer _obj) then { getPlayerUID _obj } else { "" };
 aar_entities set [_id, [_obj, _kind, _group, _side, _uid, []]];
 
 private _fields = [
-    "id", str _id,
-    "kind", str _kind,
-    "class", str _class,
-    "display", str getText (configFile >> "CfgVehicles" >> _class >> "displayName"),
-    "side", str _side
+    "id", toJSON _id,
+    "kind", toJSON _kind,
+    "class", toJSON _class,
+    "display", toJSON getText (configFile >> "CfgVehicles" >> _class >> "displayName"),
+    "side", toJSON _side
 ];
 if (_isUnit) then {
-    _fields append ["name", str name _obj, "group", str _group, "player", str (_uid isNotEqualTo ""), "uid", str _uid];
+    _fields append ["name", toJSON name _obj, "group", toJSON _group, "player", toJSON (_uid isNotEqualTo ""), "uid", toJSON _uid];
 };
 ["entity", _fields] call aar_fnc_rec;
 
@@ -55,9 +55,9 @@ if (aar_logHits) then {
         params ["_unit", "_source", "_damage", "_instigator"];
         if (!aar_active) exitWith {};
         ["hit", [
-            "unit", str (_unit call aar_fnc_knownId),
-            "source", str (_source call aar_fnc_id),
-            "instigator", str (_instigator call aar_fnc_id),
+            "unit", toJSON (_unit call aar_fnc_knownId),
+            "source", toJSON (_source call aar_fnc_id),
+            "instigator", toJSON (_instigator call aar_fnc_id),
             "damage", _damage toFixed 2
         ]] call aar_fnc_rec;
     }];
@@ -69,14 +69,14 @@ if (!_isUnit) then {
         if (!aar_active) exitWith {};
         _role = toLowerANSI _role;
         if !(_role in ["driver", "gunner"]) then { _role = "cargo" };
-        ["get_in", ["vehicle", str (_vehicle call aar_fnc_knownId), "unit", str (_unit call aar_fnc_id), "role", str _role]] call aar_fnc_rec;
+        ["get_in", ["vehicle", toJSON (_vehicle call aar_fnc_knownId), "unit", toJSON (_unit call aar_fnc_id), "role", toJSON _role]] call aar_fnc_rec;
     }];
     _obj addEventHandler ["GetOut", {
         params ["_vehicle", "_role", "_unit"];
         if (!aar_active) exitWith {};
         _role = toLowerANSI _role;
         if !(_role in ["driver", "gunner"]) then { _role = "cargo" };
-        ["get_out", ["vehicle", str (_vehicle call aar_fnc_knownId), "unit", str (_unit call aar_fnc_id), "role", str _role]] call aar_fnc_rec;
+        ["get_out", ["vehicle", toJSON (_vehicle call aar_fnc_knownId), "unit", toJSON (_unit call aar_fnc_id), "role", toJSON _role]] call aar_fnc_rec;
     }];
 };
 

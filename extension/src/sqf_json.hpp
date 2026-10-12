@@ -1,11 +1,10 @@
 #pragma once
-// Turns the record text the SQF addon sends into JSON lines.
+// Cleans up the record text the SQF addon sends before it is written.
 //
-// The addon builds each record as JSON, except that string values are written
-// with SQF's `str`, which quotes like JSON but escapes " by doubling it and
-// leaves backslashes and control characters as they are. Numbers come from
-// `toFixed`. This file fixes the strings, trims numbers, and replaces anything
-// that is not valid JSON outside a string (nan, inf, ...) with 0.
+// The addon builds each record as JSON: strings come from `toJSON`, numbers
+// from `toFixed`. This trims numbers ("12.50" -> "12.5"), replaces anything that
+// is not valid JSON outside a string (nan, inf, ...) with 0, and splits the
+// batch into one record per line.
 
 #include <cstddef>
 #include <cstdio>
@@ -74,8 +73,7 @@ inline bool is_token_char(char c) {
 }  // namespace detail
 
 // Converts a block of newline-separated records and appends them to out, one
-// JSON object per line, each ending in '\n'. Newlines inside strings are part
-// of the string, not record separators.
+// JSON object per line, each ending in '\n'.
 inline void sqf_records_to_json(std::string_view in, std::string& out) {
     std::string line;
     bool in_str = false;
@@ -90,23 +88,13 @@ inline void sqf_records_to_json(std::string_view in, std::string& out) {
         char c = in[i];
         if (in_str) {
             unsigned char u = static_cast<unsigned char>(c);
-            if (c == '"') {
-                if (i + 1 < in.size() && in[i + 1] == '"') {
-                    line += "\\\"";
-                    ++i;
-                } else {
-                    line += '"';
-                    in_str = false;
-                }
-            } else if (c == '\\') {
-                line += "\\\\";
-            } else if (c == '\n') {
-                line += "\\n";
-            } else if (c == '\r') {
-                line += "\\r";
-            } else if (c == '\t') {
-                line += "\\t";
-            } else if (u < 0x20) {
+            if (c == '\\' && i + 1 < in.size()) {
+                line += c;  // keep toJSON's escape sequence as it is
+                line += in[++i];
+            } else if (c == '"') {
+                line += '"';
+                in_str = false;
+            } else if (u < 0x20) {  // toJSON escapes these; stay valid if one slips through
                 char esc[8];
                 std::snprintf(esc, sizeof(esc), "\\u%04x", u);
                 line += esc;

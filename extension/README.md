@@ -94,7 +94,7 @@ class AAR {
 
 - `fn_init.sqf` (postInit, server only) opens the file through the extension, writes the header and adds the mission event handlers, including `ProjectileCreated` with the projectile event handlers (`HitPart`, `HitExplosion`, `Explode`, `Deleted`, `SubmunitionCreated`).
 - An `EachFrame` handler takes a snapshot every `interval` seconds (`fn_snapshot.sqf`) and sends everything queued that frame in one `callExtension` call (`fn_flush.sqf`).
-- Records are built in SQF as JSON text, with strings written by `str`. The extension turns SQF's doubled-quote escaping into JSON escaping, trims numbers, and appends the lines to the file from a background thread that flushes at least once a second.
+- Records are built in SQF as JSON text, with strings written by `toJSON` and numbers by `toFixed`. The extension trims the numbers and appends the lines to the file from a background thread that flushes at least once a second.
 
 Extension calls, for reference:
 
@@ -109,6 +109,6 @@ Extension calls, for reference:
 
 - `logProjectiles` writes two or three lines per round. Large firefights produce big files and cost some server FPS in SQF; turn it off if you only need movement and kills.
 - Bullet impacts on terrain and buildings are not logged as hits, only as the `proj_end` position.
-- Needs Arma 3 2.10 or newer for `ProjectileCreated` and the projectile event handlers.
+- Needs Arma 3 2.18 or newer (`toJSON`, `ProjectileCreated` and the projectile event handlers).
 - If a mission ends without `Ended` or `MPEnded` firing (for example leaving the editor preview), the file has no `end` line; the next mission closes it.
 - Not tested in-game yet.

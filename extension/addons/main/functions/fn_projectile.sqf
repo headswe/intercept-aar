@@ -24,12 +24,12 @@ if (_kind isEqualTo "created") exitWith {
     if (_parent > 0 && _shooter == 0) then { _shooter = aar_projShooters getOrDefault [_parent, 0] };
     aar_projShooters set [_pid, _shooter];
 
-    private _fields = ["id", str _pid, "shooter", str _shooter];
-    if (_instigator != 0 && _instigator != _shooter) then { _fields append ["instigator", str _instigator] };
-    if (_parent > 0) then { _fields append ["parent", str _parent] };
+    private _fields = ["id", toJSON _pid, "shooter", toJSON _shooter];
+    if (_instigator != 0 && _instigator != _shooter) then { _fields append ["instigator", toJSON _instigator] };
+    if (_parent > 0) then { _fields append ["parent", toJSON _parent] };
     _fields append [
-        "weapon", str _weapon,
-        "ammo", str typeOf _projectile,
+        "weapon", toJSON _weapon,
+        "ammo", toJSON typeOf _projectile,
         "pos", _pos call aar_fnc_pos,
         "vel", _vel call aar_fnc_pos
     ];
@@ -47,25 +47,25 @@ if (_kind isEqualTo "sub") exitWith {
     if (_sid <= 0) exitWith { _sub setVariable ["aar_parent", _pid] };
     private _shooter = aar_projShooters getOrDefault [_pid, 0];
     if (_sid in aar_projShooters) then { aar_projShooters set [_sid, _shooter] };
-    ["submunition", ["id", str _sid, "parent", str _pid, "shooter", str _shooter]] call aar_fnc_rec;
+    ["submunition", ["id", toJSON _sid, "parent", toJSON _pid, "shooter", toJSON _shooter]] call aar_fnc_rec;
 };
 
 if (_kind in ["hit", "splash"]) exitWith {
     // Only hits on recorded units and vehicles; bullets striking terrain or buildings are not logged.
     private _target = (_this select 2) call aar_fnc_knownId;
     if (_target <= 0) exitWith {};
-    private _fields = ["id", str _pid, "target", str _target];
+    private _fields = ["id", toJSON _pid, "target", toJSON _target];
     // HitPart fires once per component the bullet passes through, so several lines for the
     // same projectile and target trace its path through the body.
     if (_kind isEqualTo "hit") then {
         _fields append ["pos", (_this select 3) call aar_fnc_pos];
         private _parts = _this select 4;
-        if (_parts isNotEqualTo []) then { _fields append ["part", str (_parts select 0)] };
+        if (_parts isNotEqualTo []) then { _fields append ["part", toJSON (_parts select 0)] };
     };
     [["proj_splash", "proj_hit"] select (_kind isEqualTo "hit"), _fields] call aar_fnc_rec;
 };
 
 if (_kind isEqualTo "end") exitWith {
-    ["proj_end", ["id", str _pid, "pos", (_this select 2) call aar_fnc_pos, "exploded", str (_this select 3)]] call aar_fnc_rec;
+    ["proj_end", ["id", toJSON _pid, "pos", (_this select 2) call aar_fnc_pos, "exploded", toJSON (_this select 3)]] call aar_fnc_rec;
     aar_projShooters deleteAt _pid;
 };

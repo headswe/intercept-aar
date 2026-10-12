@@ -42,12 +42,12 @@ aar_lastKeyframe = -1e9;
 
 ["header", [
     "version", "1",
-    "mission", str missionName,
-    "world", str worldName,
-    "started_utc", str _startedUtc,
+    "mission", toJSON missionName,
+    "world", toJSON worldName,
+    "started_utc", toJSON _startedUtc,
     "interval", aar_interval toFixed 2,
     "keyframe_interval", aar_keyframeInterval toFixed 2,
-    "multiplayer", str isMultiplayer
+    "multiplayer", toJSON isMultiplayer
 ]] call aar_fnc_rec;
 
 addMissionEventHandler ["EachFrame", {
@@ -68,9 +68,9 @@ addMissionEventHandler ["EntityKilled", {
     private _victim = _killed call aar_fnc_id;
     if (_victim == 0) exitWith {};
     ["killed", [
-        "victim", str _victim,
-        "killer", str (_killer call aar_fnc_id),
-        "instigator", str (_instigator call aar_fnc_id),
+        "victim", toJSON _victim,
+        "killer", toJSON (_killer call aar_fnc_id),
+        "instigator", toJSON (_instigator call aar_fnc_id),
         "pos", (getPosASL _killed) call aar_fnc_pos
     ]] call aar_fnc_rec;
 }];
@@ -78,19 +78,19 @@ addMissionEventHandler ["EntityKilled", {
 addMissionEventHandler ["EntityRespawned", {
     params ["_new", "_old"];
     if (!aar_active) exitWith {};
-    ["respawn", ["new", str (_new call aar_fnc_id), "old", str (_old call aar_fnc_id)]] call aar_fnc_rec;
+    ["respawn", ["new", toJSON (_new call aar_fnc_id), "old", toJSON (_old call aar_fnc_id)]] call aar_fnc_rec;
 }];
 
 addMissionEventHandler ["PlayerConnected", {
     params ["", "_uid", "_name", "_jip", "_owner"];
     if (!aar_active) exitWith {};
-    ["connected", ["uid", str _uid, "name", str _name, "jip", str _jip, "owner", str _owner]] call aar_fnc_rec;
+    ["connected", ["uid", toJSON _uid, "name", toJSON _name, "jip", toJSON _jip, "owner", toJSON _owner]] call aar_fnc_rec;
 }];
 
 addMissionEventHandler ["PlayerDisconnected", {
     params ["", "_uid", "_name", "_jip", "_owner"];
     if (!aar_active) exitWith {};
-    ["disconnected", ["uid", str _uid, "name", str _name, "jip", str _jip, "owner", str _owner]] call aar_fnc_rec;
+    ["disconnected", ["uid", toJSON _uid, "name", toJSON _name, "jip", toJSON _jip, "owner", toJSON _owner]] call aar_fnc_rec;
 }];
 
 addMissionEventHandler ["MPEnded", { ["mp_ended"] call aar_fnc_stop }];
@@ -141,12 +141,12 @@ if (aar_logMarkers) then {
         params ["_marker", "_channel", "_owner"];
         if (!aar_active) exitWith {};
         ["marker_created", [
-            "marker", str _marker,
-            "channel", str _channel,
-            "owner", str (_owner call aar_fnc_id),
-            "text", str markerText _marker,
-            "markerType", str markerType _marker,
-            "color", str markerColor _marker,
+            "marker", toJSON _marker,
+            "channel", toJSON _channel,
+            "owner", toJSON (_owner call aar_fnc_id),
+            "text", toJSON markerText _marker,
+            "markerType", toJSON markerType _marker,
+            "color", toJSON markerColor _marker,
             "pos", (getMarkerPos _marker) call aar_fnc_pos
         ]] call aar_fnc_rec;
     }];
@@ -154,15 +154,15 @@ if (aar_logMarkers) then {
         params ["_marker"];
         if (!aar_active) exitWith {};
         ["marker_updated", [
-            "marker", str _marker,
-            "text", str markerText _marker,
+            "marker", toJSON _marker,
+            "text", toJSON markerText _marker,
             "pos", (getMarkerPos _marker) call aar_fnc_pos
         ]] call aar_fnc_rec;
     }];
     addMissionEventHandler ["MarkerDeleted", {
         params ["_marker"];
         if (!aar_active) exitWith {};
-        ["marker_deleted", ["marker", str _marker]] call aar_fnc_rec;
+        ["marker_deleted", ["marker", toJSON _marker]] call aar_fnc_rec;
     }];
 };
 

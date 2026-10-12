@@ -6,7 +6,7 @@
 params [["_reason", "stopped"]];
 if (!aar_active) exitWith {};
 
-["end", ["reason", str _reason, "entities", str (aar_nextId - 1), "projectiles", str (aar_nextPid - 1)]] call aar_fnc_rec;
+["end", ["reason", toJSON _reason, "entities", toJSON (aar_nextId - 1), "projectiles", toJSON (aar_nextPid - 1)]] call aar_fnc_rec;
 call aar_fnc_flush;
 aar_active = false;
 "arma_aar" callExtension ["close", []];
