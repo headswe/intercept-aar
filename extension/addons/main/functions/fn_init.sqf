@@ -27,6 +27,7 @@ aar_frameBudget = (["frameBudget", 2] call _setting) max 0.1;          // ms of 
 aar_spikeThreshold = (["spikeThreshold", 100] call _setting) max 1;  // ms; slower server frames are logged
 aar_pauseWhenEmpty = (["pauseWhenEmpty", 1] call _setting) != 0;
 aar_logAI = (["logAI", 1] call _setting) != 0;  // AI group behaviour, enemies detected, fleeing
+aar_tmf = isClass (configFile >> "CfgPatches" >> "tmf_common");  // TMF ORBAT and loadouts
 
 private _result = "arma_aar" callExtension ["open", [missionName, worldName]];
 _result params ["_output", "_code"];
@@ -81,6 +82,8 @@ aar_idle = false;
     "game_version", toJSON (productVersion select [2, 2]),
     "mods", toJSON ((getLoadedModsInfo select { !(_x select 3) }) apply { _x select 1 })
 ]] call aar_fnc_rec;
+
+if (aar_tmf) then { call aar_fnc_orbat };
 
 addMissionEventHandler ["EachFrame", { call aar_fnc_frame }];
 

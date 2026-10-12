@@ -33,8 +33,8 @@ private _class = typeOf _obj;
 private _side = str side _obj;
 private _group = if (_isUnit && {!isNull group _obj}) then { groupId group _obj } else { "" };
 private _uid = if (isPlayer _obj) then { getPlayerUID _obj } else { "" };
-// [object, kind, group, side, uid, last snapshot state]
-aar_entities set [_id, [_obj, _kind, _group, _side, _uid, []]];
+// [object, kind, group, side, uid, last snapshot state, TMF role]
+aar_entities set [_id, [_obj, _kind, _group, _side, _uid, [], _obj getVariable ["tmf_assigngear_role", ""]]];
 
 private _fields = [
     "id", toJSON _id,
@@ -46,6 +46,7 @@ private _fields = [
 if (_isUnit) then {
     _fields append ["name", toJSON name _obj, "group", toJSON _group, "player", toJSON (_uid isNotEqualTo ""), "uid", toJSON _uid];
 };
+if (aar_tmf) then { _fields append ([_obj, _kind] call aar_fnc_tmfFields) };
 ["entity", _fields] call aar_fnc_rec;
 
 if (aar_logHits) then {

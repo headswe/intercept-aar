@@ -38,7 +38,20 @@ for "_i" from _index to _end - 1 do {
                 if (_newGroup isNotEqualTo _group || _newSide isNotEqualTo _side) then {
                     _entry set [2, _newGroup];
                     _entry set [3, _newSide];
-                    ["group", ["unit", toJSON _id, "group", toJSON _newGroup, "side", toJSON _newSide]] call aar_fnc_rec;
+                    private _fields = ["unit", toJSON _id, "group", toJSON _newGroup, "side", toJSON _newSide];
+                    if (aar_tmf) then {
+                        private _parent = (group _obj) getVariable ["TMF_OrbatParent", -1];
+                        if (_parent isNotEqualTo -1) then { _fields append ["orbat", toJSON _parent] };
+                    };
+                    ["group", _fields] call aar_fnc_rec;
+                };
+                if (aar_tmf) then {
+                    // TMF gives players their gear after the unit is first seen, and respawns can change it.
+                    private _role = _obj getVariable ["tmf_assigngear_role", ""];
+                    if (_role isNotEqualTo (_entry select 6)) then {
+                        _entry set [6, _role];
+                        ["loadout", ["unit", toJSON _id] + (_obj call aar_fnc_tmfLoadout)] call aar_fnc_rec;
+                    };
                 };
                 private _newUid = if (isPlayer _obj) then { getPlayerUID _obj } else { "" };
                 if (_newUid isNotEqualTo _uid) then {

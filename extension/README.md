@@ -43,7 +43,7 @@ Every line is a JSON object with `type` and `t` (mission time in seconds, from `
 | type | fields |
 |---|---|
 | `header` | `version`, `mission`, `world`, `started_utc`, `interval`, `keyframe_interval`, `multiplayer`. This version adds mission metadata: `briefing_name`, `on_load_name`, `author`, `overview` (from description.ext), `game_type`, `max_players` (from its `Header` class), `server_name`, `world_name` (display name), `world_size` (m), `date` (in-game start `[year, month, day, hour, minute]`), `time_multiplier`, `weather` (`[overcast, fog, rain]` at start), `game_version` (`[version, build]`), `mods` (loaded non-official mod folders) |
-| `entity` | first sighting of an entity: `id`, `kind` (`unit`, `car`, `tank`, `heli`, `plane`, `ship`, `static`, `vehicle`, `air`), `class`, `display`, `side`; units also have `name`, `group`, `player`, `uid` |
+| `entity` | first sighting of an entity: `id`, `kind` (`unit`, `car`, `tank`, `heli`, `plane`, `ship`, `static`, `vehicle`, `air`), `class`, `display`, `side`; units also have `name`, `group`, `player`, `uid`. With TMF: `orbat`, plus `loadout_faction`, `role`, `role_name` on units and `callsign`, `orbat_team` on vehicles (see "TMF" below) |
 | `snap` | `key` (true for a full keyframe), `e`: array of `[id, x, y, z, dir, alive, damage, vehicle_id]` |
 | `killed` | `victim`, `killer`, `instigator`, `pos` |
 | `hit` | `unit`, `source`, `instigator`, `damage`. In this version every recorded unit and vehicle, players included: see "Hits on players" below |
@@ -54,7 +54,9 @@ Every line is a JSON object with `type` and `t` (mission time in seconds, from `
 | `proj_end` | projectile removed: `id`, `pos` (impact or end point), `exploded` |
 | `get_in` / `get_out` | `vehicle`, `unit`, `role` (`driver`, `gunner`, `cargo`); in this version `get_out` has `eject: true` for ejections |
 | `seat` | `vehicle`, `unit`, `role`: a unit moved to another seat inside the vehicle (this version only) |
-| `group` | `unit`, `group`, `side` when a unit changes group or side |
+| `group` | `unit`, `group`, `side` when a unit changes group or side; with TMF also `orbat` |
+| `orbat` | TMF only, written once after the header: `source` (`tmf`), `teams`: one tree per side or faction, see "TMF" below |
+| `loadout` | TMF only: `unit`, `loadout_faction`, `role`, `role_name` when TMF gives a unit its gear after it was first recorded |
 | `player` | `unit`, `uid`, `name` when a player takes or leaves a unit (empty `uid` = now AI) |
 | `respawn` | `new`, `old` |
 | `connected` / `disconnected` | `uid`, `name`, `jip`, `owner` |
@@ -118,6 +120,16 @@ Extension calls, for reference:
 | `"arma_aar" callExtension ["write", [records]]` | appends newline-separated records; returns microseconds since `tick` if one is pending |
 | `"arma_aar" callExtension ["close", []]` | flushes and closes |
 | `"arma_aar" callExtension "version"` | returns the version |
+
+## TMF
+
+When [TMF](https://github.com/TMF3/TMF) is loaded, the recording carries its ORBAT and loadouts, so a viewer can show the mission's chain of command instead of a flat list of groups.
+
+- The `orbat` record holds the tree from the mission's ORBAT settings (`TMF_ORBATSettings`). Each entry in `teams` has `side` (`WEST`, `EAST`, `GUER`, `CIV`) or `faction`, and the root node. A node is `{"id", "name", "full_name", "icon", "modifier", "order", "children": [...]}`; `icon` and `modifier` are TMF texture paths.
+- Units carry `orbat`, the node id their group was placed under (`TMF_OrbatParent`). Vehicles carry their own `orbat`, plus `callsign` and `orbat_team` when set in the editor. An entity without `orbat` belongs under its team's root node, as in TMF's own briefing.
+- `role` and `loadout_faction` are TMF's assign gear classes (`r`, `sl`, ...), and `role_name` is the role's display name from `CfgLoadouts`. TMF gives players their gear on their own machine, so the role often arrives a moment later as a `loadout` record.
+
+Without TMF none of these fields are written.
 
 ## Hits on players
 

@@ -31,6 +31,9 @@ class CfgFunctions {
             class addMPHit {};
             class registerGroup {};
             class groupFields {};
+            class orbat {};
+            class tmfFields {};
+            class tmfLoadout {};
             class stop {};
         };
     };
