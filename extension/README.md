@@ -60,6 +60,9 @@ Every line is a JSON object with `type` and `t` (mission time in seconds, from `
 | `connected` / `disconnected` | `uid`, `name`, `jip`, `owner` |
 | `marker_created` / `marker_updated` / `marker_deleted` | `marker`, plus `text`, `markerType`, `color`, `channel`, `owner`, `pos` where available; in this version `marker_deleted` has `by` (who deleted it) when known |
 | `deleted` | `id` when an entity is removed from the world |
+| `combat_mode` | an AI group's behaviour changed (`mode`: `SAFE`, `AWARE`, `COMBAT`, `STEALTH`, `CARELESS`), also written once when the group is first seen: `group`, `side`, `leader` (this version only) |
+| `enemy_detected` | an AI group detected a new enemy: `group`, `side`, `leader`, `target` (this version only) |
+| `fleeing` | an AI group started or stopped fleeing: `group`, `side`, `leader`, `fleeing` (this version only) |
 | `building` | a building or wall changed model, usually destroyed: `from`, `to` (classes), `ruin`, `pos` (this version only) |
 | `end` | `reason`, `entities` |
 | `perf` | once per snapshot (this version only): server `fps`, `fps_min`, `units`, `entities`, `projectiles` in flight, and the recorder's own snapshot cost: `snap_frames` (frames it was spread over), `snap_ms` (total), `snap_max_ms` (worst frame), `batch` (entities per frame) |
@@ -95,6 +98,7 @@ class AAR {
     frameBudget = 2;        // ms of recorder work per frame; snapshots are spread over frames to stay near it
     spikeThreshold = 100;   // ms; server frames slower than this get a perf_spike record and an RPT line
     pauseWhenEmpty = 1;     // dedicated server: no snapshots while no players are connected
+    logAI = 1;              // combat_mode / enemy_detected / fleeing for AI groups
 };
 ```
 
@@ -131,6 +135,8 @@ Before settling on this design we read OCAP2, R3 and Anrop's AAR addon. This one
 - New units and vehicles are registered by `EntityCreated` and removed by `EntityDeleted` the moment it happens, instead of scanning `allUnits` every second (R3, Anrop); a sweep on each keyframe is the safety net.
 
 ## Known limitations
+
+- AI awareness records (`combat_mode`, `enemy_detected`, `fleeing`) come from group event handlers, which fire where the group is local. They cover AI the server runs, not groups on a headless client or led by a player. The wiki doesn't document this locality, so it is an assumption to check in-game.
 
 - `logProjectiles` writes two or three lines per round. Large firefights produce big files and cost some server FPS in SQF; turn it off if you only need movement and kills.
 - Bullet impacts on terrain and buildings are not logged as hits, only as the `proj_end` position.

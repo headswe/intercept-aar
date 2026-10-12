@@ -29,6 +29,8 @@ class CfgFunctions {
             class frame {};
             class hit {};
             class addMPHit {};
+            class registerGroup {};
+            class groupFields {};
             class stop {};
         };
     };

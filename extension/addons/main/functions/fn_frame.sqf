@@ -45,6 +45,9 @@ if (!_working && {!aar_idle} && {_t - aar_lastSnapshot >= aar_interval}) then {
         {
             if ((_x getVariable ["aar_id", 0]) == 0) then { _x call aar_fnc_register };
         } forEach (allUnits + vehicles);
+        if (aar_logAI) then {
+            { if (local _x) then { _x call aar_fnc_registerGroup } } forEach allGroups;
+        };
     };
     aar_snap = [_t, _keyframe, keys aar_entities, 0, [], []];
     aar_snapStats = [0, 0, 0];  // frames, total ms, max ms

@@ -29,6 +29,10 @@ for "_i" from _index to _end - 1 do {
 
             // Group, side and player changes are rare, so they are events rather than snapshot columns.
             if (_alive) then {
+                if (aar_logAI) then {
+                    private _grp = group _obj;
+                    if (local _grp && {!(_grp getVariable ["aar_group", false])}) then { _grp call aar_fnc_registerGroup };
+                };
                 private _newGroup = if (isNull group _obj) then { "" } else { groupId group _obj };
                 private _newSide = str side _obj;
                 if (_newGroup isNotEqualTo _group || _newSide isNotEqualTo _side) then {
