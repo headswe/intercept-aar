@@ -49,17 +49,19 @@ if (_isUnit) then {
 ["entity", _fields] call aar_fnc_rec;
 
 if (aar_logHits) then {
-    // Hit only fires where the unit is local (AI on the server). Hits on remote players
-    // come from the projectile HitPart handler, which fires on the server's copy of every shot.
+    // Hit fires only where the object is local, so it covers server AI. Once the object is
+    // remote (a player, headless client AI) the server switches to MPHit, which the owner raises
+    // and broadcasts, so the hit is the owner's authoritative result rather than the server's
+    // copy of the bullet.
     _obj addEventHandler ["Hit", {
-        params ["_unit", "_source", "_damage", "_instigator"];
-        if (!aar_active) exitWith {};
-        ["hit", [
-            "unit", toJSON (_unit call aar_fnc_knownId),
-            "source", toJSON (_source call aar_fnc_id),
-            "instigator", toJSON (_instigator call aar_fnc_id),
-            "damage", _damage toFixed 2
-        ]] call aar_fnc_rec;
+        params ["_unit"];
+        if (_unit getVariable ["aar_mpHit", false]) exitWith {};
+        _this call aar_fnc_hit;
+    }];
+    if (!local _obj) then { _obj call aar_fnc_addMPHit };
+    _obj addEventHandler ["Local", {
+        params ["_entity", "_isLocal"];
+        if (!_isLocal) then { _entity call aar_fnc_addMPHit };
     }];
 };
 

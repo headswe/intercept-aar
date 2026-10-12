@@ -46,7 +46,7 @@ Every line is a JSON object with `type` and `t` (mission time in seconds, from `
 | `entity` | first sighting of an entity: `id`, `kind` (`unit`, `car`, `tank`, `heli`, `plane`, `ship`, `static`, `vehicle`, `air`), `class`, `display`, `side`; units also have `name`, `group`, `player`, `uid` |
 | `snap` | `key` (true for a full keyframe), `e`: array of `[id, x, y, z, dir, alive, damage, vehicle_id]` |
 | `killed` | `victim`, `killer`, `instigator`, `pos` |
-| `hit` | `unit`, `source`, `instigator`, `damage` (server-local units only, see below) |
+| `hit` | `unit`, `source`, `instigator`, `damage`. In this version every recorded unit and vehicle, players included: see "Hits on players" below |
 | `shot` | projectile created: `id` (projectile id), `shooter`, optional `parent` (for submunitions), optional `instigator` (the gunner when `shooter` is a vehicle), `weapon`, `ammo`, `pos`, `vel` |
 | `submunition` | links a submunition (smoke or artillery shell, bomblet) recorded before its parent was known: `id`, `parent`, `shooter` |
 | `proj_hit` | projectile directly hit a recorded unit or vehicle: `id`, `target`, `pos`, `part` (component hit, e.g. `head`); one line per component the projectile passes through, so consecutive lines trace penetration |
@@ -61,6 +61,7 @@ Every line is a JSON object with `type` and `t` (mission time in seconds, from `
 | `deleted` | `id` when an entity is removed from the world |
 | `end` | `reason`, `entities` |
 | `perf` | once per snapshot (this version only): server `fps`, `fps_min`, `units`, `entities`, `projectiles` in flight, and the recorder's own snapshot cost: `snap_frames` (frames it was spread over), `snap_ms` (total), `snap_max_ms` (worst frame), `batch` (entities per frame) |
+| `idle` | `idle`: true when a dedicated server has no players left and snapshots stop, false when someone joins again (this version only) |
 | `perf_spike` | a server frame took longer than `spikeThreshold` (this version only): `frame_ms`, `recorder_ms` (the recorder's work in that frame), `fps`, `units`, `entities` |
 
 Snapshots are deltas: an entity appears in a `snap` only when it moved more than 10 cm, turned more than 1°, or its alive/damage/vehicle state changed. Every `keyframe_interval` seconds a full snapshot (`"key":true`) lists every entity, so a player can seek to any keyframe and replay forward. Bodies and parked vehicles therefore cost nothing between keyframes.
@@ -91,6 +92,7 @@ class AAR {
     logMarkers = 1;
     frameBudget = 2;        // ms of recorder work per frame; snapshots are spread over frames to stay near it
     spikeThreshold = 100;   // ms; server frames slower than this get a perf_spike record and an RPT line
+    pauseWhenEmpty = 1;     // dedicated server: no snapshots while no players are connected
 };
 ```
 
@@ -110,6 +112,20 @@ Extension calls, for reference:
 | `"arma_aar" callExtension ["write", [records]]` | appends newline-separated records; returns microseconds since `tick` if one is pending |
 | `"arma_aar" callExtension ["close", []]` | flushes and closes |
 | `"arma_aar" callExtension "version"` | returns the version |
+
+## Hits on players
+
+A player's damage is decided on the player's own machine. The server's copy of the bullet usually agrees, but with lag it can hit or miss differently, so `proj_hit` on a player is the server's view of the shot. For the authoritative result the recorder uses `Hit` while an object is local to the server (AI) and switches to `MPHit` once it is not (players, headless client AI, vehicles they drive). `MPHit` is raised by the owner and broadcast, so `hit` reflects what the owner's machine applied. Its code runs on every machine, but it is one line that does nothing off the server, and clients need nothing installed. `killed` is always authoritative. MPHit does not fire for the killing blow.
+
+## Lessons from other recorders
+
+Before settling on this design we read OCAP2, R3 and Anrop's AAR addon. This one avoids what went wrong there:
+
+- Strings go through `toJSON`, so names with quotes cannot break a record (R3, Anrop).
+- Nothing is sent to clients and nothing a client sends is trusted; there is no admin event to spoof (OCAP).
+- No scheduled script per projectile or per unit; everything runs in event handlers and one `EachFrame` handler (all three).
+- Extension output is never `compile`d (R3), and the file is local, so there is no upload that can drop data or leak a token (Anrop, OCAP).
+- Snapshots stop while a dedicated server is empty (R3, OCAP).
 
 ## Known limitations
 

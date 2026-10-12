@@ -27,6 +27,8 @@ class CfgFunctions {
             class projectile {};
             class flush {};
             class frame {};
+            class hit {};
+            class addMPHit {};
             class stop {};
         };
     };

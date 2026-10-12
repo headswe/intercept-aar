@@ -3,7 +3,7 @@
  * of entities per frame, sized so the recorder's work in one frame stays near aar_frameBudget
  * milliseconds. Flushes queued records, writes a perf record once per snapshot and a
  * perf_spike record (plus an RPT line) whenever a server frame takes longer than
- * aar_spikeThreshold milliseconds.
+ * aar_spikeThreshold milliseconds. Pauses snapshots while a dedicated server is empty.
  */
 if (!aar_active) exitWith {};
 
@@ -21,9 +21,20 @@ if (_frameMs >= aar_spikeThreshold) then {
 };
 aar_lastWorkMs = 0;
 
+// On a dedicated server with nobody connected, stop taking snapshots so an empty server
+// doesn't grow the file all night. The first snapshot after someone joins is a keyframe.
+if (aar_pauseWhenEmpty && isDedicated) then {
+    private _idle = (allPlayers - entities "HeadlessClient_F") isEqualTo [];
+    if (_idle isNotEqualTo aar_idle) then {
+        aar_idle = _idle;
+        ["idle", ["idle", toJSON _idle]] call aar_fnc_rec;
+        if (!_idle) then { aar_lastKeyframe = -1e9 };
+    };
+};
+
 private _t = time;
 private _working = aar_snap isNotEqualTo [];
-if (!_working && {_t - aar_lastSnapshot >= aar_interval}) then {
+if (!_working && {!aar_idle} && {_t - aar_lastSnapshot >= aar_interval}) then {
     aar_lastSnapshot = _t;
     private _keyframe = _t - aar_lastKeyframe >= aar_keyframeInterval;
     if (_keyframe) then { aar_lastKeyframe = _t };

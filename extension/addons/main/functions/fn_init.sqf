@@ -4,7 +4,7 @@
  *
  * Mission settings in description.ext (all optional; class InterceptAAR is read too):
  *   class AAR { enabled = 1; interval = 1; keyframeInterval = 60; logProjectiles = 1; logHits = 1; logMarkers = 1;
- *               frameBudget = 2; spikeThreshold = 100; };
+ *               frameBudget = 2; spikeThreshold = 100; pauseWhenEmpty = 1; };
  */
 if (!isServer) exitWith {};
 aar_active = false;
@@ -25,6 +25,7 @@ aar_logHits = (["logHits", 1] call _setting) != 0;
 aar_logMarkers = (["logMarkers", 1] call _setting) != 0;
 aar_frameBudget = (["frameBudget", 2] call _setting) max 0.1;          // ms of recorder work per frame
 aar_spikeThreshold = (["spikeThreshold", 100] call _setting) max 1;  // ms; slower server frames are logged
+aar_pauseWhenEmpty = (["pauseWhenEmpty", 1] call _setting) != 0;
 
 private _result = "arma_aar" callExtension ["open", [missionName, worldName]];
 _result params ["_output", "_code"];
@@ -46,6 +47,7 @@ aar_snap = [];          // snapshot in progress, see aar_fnc_snapshot
 aar_snapStats = [0, 0, 0];
 aar_batch = 100;        // entities per frame, adjusted to stay within aar_frameBudget
 aar_lastWorkMs = 0;
+aar_idle = false;
 
 ["header", [
     "version", "1",
