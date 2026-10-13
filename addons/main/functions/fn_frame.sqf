@@ -45,6 +45,7 @@ if (!_working && {!aar_idle} && {_t - aar_lastSnapshot >= aar_interval}) then {
     private _keyframe = _t - aar_lastKeyframe >= aar_keyframeInterval;
     if (_keyframe) then { aar_lastKeyframe = _t };
     "arma_aar" callExtension "tick";
+    call aar_fnc_coverMap;
     // EntityCreated registers new objects as they appear; this sweep on keyframes only
     // catches anything created before the handler was added or that it missed.
     if (_keyframe) then {

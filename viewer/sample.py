@@ -4,7 +4,7 @@
 Usage: sample.py [out.jsonl]     (default: stdout)
 
 A TMF platoon (two squads and a car) attacks an AI-held village; a few players connect,
-take units, fire, get hit, drive, place markers, talk on ACRE2 radios and leave. Not real data.
+take units, fire, get hit, drive, place and draw markers (with a Cover Map module), talk on ACRE2 radios and leave. Not real data.
 """
 import json
 import math
@@ -108,9 +108,31 @@ for pid, (uid, name) in players.items():
     ev(jt + 0.5, "player", unit=pid, uid=uid, name=name)
     ev(jt + 3, "loadout", unit=pid, loadout_faction="blu_f", role=["pl", "rto", "", "", "", "sl"][pid - 1] or "r",
        role_name=["Platoon Leader", "Radio Operator", "", "", "", "Squad Leader"][pid - 1] or "Rifleman")
-ev(20, "marker_created", marker="_USER_DEFINED #2/0/1", channel=1, owner=1, text="OBJ MARINA", markerType="mil_objective", color="ColorRed", pos=[VX, VY, 0])
-ev(22, "marker_created", marker="_USER_DEFINED #2/1/1", channel=3, owner=1, text="RP", markerType="mil_dot", color="ColorBLUFOR", pos=[X0 + 300, Y0 + 280, 0])
-ev(140, "marker_updated", marker="_USER_DEFINED #2/1/1", text="RP (moved)", pos=[X0 + 420, Y0 + 380, 0])
+def marker(text="", type_="mil_dot", color="Default", shape="ICON", brush="Solid", size=(1, 1), dir=0, alpha=1, **f):
+    return dict(text=text, markerType=type_, color=color, shape=shape, brush=brush, size=list(size), dir=dir, alpha=alpha, **f)
+
+
+# Placed in the editor: the AO, the objective area, the start point and a phase line.
+ev(0, "marker_created", marker="ao", channel=-1, editor=True, pos=[VX + 250, VY - 150, 0],
+   **marker(shape="RECTANGLE", brush="Border", color="ColorBlack", size=(900, 650), dir=15))
+ev(0, "marker_created", marker="obj_area", channel=-1, editor=True, pos=[VX, VY, 0],
+   **marker(shape="ELLIPSE", brush="FDiagonal", color="ColorOPFOR", size=(160, 120)))
+ev(0, "marker_created", marker="start", channel=-1, editor=True, pos=[X0, Y0, 0], **marker("START", "mil_start", "ColorBLUFOR"))
+ev(0, "marker_created", marker="pl_blue", channel=-1, editor=True, pos=[X0 - 300, Y0 + 250, 0],
+   **marker("PL BLUE", "mil_dot", "ColorBLUFOR", shape="POLYLINE",
+            line=[X0 - 500, Y0 + 50, X0 - 350, Y0 + 260, X0 - 120, Y0 + 420, X0 + 60, Y0 + 640]))
+# The Cover Map module: everything outside the AO is shaded.
+ev(0, "cover_map", id="0", pos=[VX + 250, VY - 150, 0], area=[1000, 750, 15])
+# Placed by players during the mission.
+ev(20, "marker_created", marker="_USER_DEFINED #2/0/1", channel=1, owner=1, pos=[VX, VY, 0], **marker("OBJ MARINA", "mil_objective", "ColorRed"))
+ev(22, "marker_created", marker="_USER_DEFINED #2/1/1", channel=3, owner=1, pos=[X0 + 300, Y0 + 280, 0], **marker("RP", "mil_dot", "ColorBLUFOR"))
+ev(60, "marker_created", marker="_USER_DEFINED #2/2/1", channel=3, owner=1, pos=[X0 - 150, Y0 + 500, 0],
+   **marker("ATK", "mil_arrow", "ColorBLUFOR", dir=300, size=(1.5, 1.5)))
+ev(75, "marker_created", marker="_USER_DEFINED #2/3/1", channel=3, owner=1, pos=[VX + 200, VY - 120, 0],
+   **marker("", "mil_dot", "ColorOrange", shape="POLYLINE", line=[X0 - 100, Y0 + 350, VX + 400, VY - 250, VX + 200, VY - 120]))
+ev(140, "marker_updated", marker="_USER_DEFINED #2/1/1", pos=[X0 + 420, Y0 + 380, 0], **marker("RP (moved)", "mil_dot", "ColorBLUFOR"))
+ev(320, "marker_updated", marker="obj_area", pos=[VX, VY, 0],
+   **marker(shape="ELLIPSE", brush="FDiagonal", color="ColorBLUFOR", size=(160, 120)))
 ev(30, "get_in", vehicle=car, unit=6, role="driver")
 ev(31, "get_in", vehicle=car, unit=7, role="gunner")
 ev(31, "get_in", vehicle=car, unit=8, role="cargo")
