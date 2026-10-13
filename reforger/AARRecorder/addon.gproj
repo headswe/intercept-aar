@@ -1,0 +1,8 @@
+GameProject {
+ ID "AARRecorder"
+ GUID "A558ADC22CF3532B"
+ TITLE "AAR Recorder"
+ Dependencies {
+  "58D0FB3206B6F859"
+ }
+}
