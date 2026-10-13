@@ -2,3 +2,7 @@ build/
 out/
 .vs/
 *.user
+.hemttout/
+.hemttprivatekey
+.biprivatekey
+__pycache__/

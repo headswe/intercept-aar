@@ -1,4 +1,4 @@
-<title>Intercept AAR Viewer</title>
+<title>AAR Viewer</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=IBM+Plex+Sans+Condensed:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
@@ -54,18 +54,26 @@ h1 { font-family: var(--font-display); font-weight: 700; font-size: 1.5rem; lett
 .btn:hover { border-color: var(--ink-soft); }
 .btn.primary { background: var(--ink); color: var(--ground); border-color: var(--ink); }
 
-main { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 0; min-height: 0; }
+main { display: grid; grid-template-columns: minmax(0, 1fr) 390px; gap: 0; min-height: 0; }
 .board { position: relative; min-height: 0; border-right: 1px solid var(--rule); overflow: hidden; touch-action: none; }
 .board canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; cursor: grab; }
 .board canvas.dragging { cursor: grabbing; }
 .zoom { position: absolute; right: 10px; top: 10px; display: flex; flex-direction: column; gap: 4px; }
 .zoom .btn { width: 32px; height: 32px; padding: 0; font-family: var(--font-data); }
 .scale { position: absolute; left: 12px; bottom: 10px; font-family: var(--font-data); font-size: 11px; color: var(--ink-soft); }
+.scale em { font-style: normal; color: var(--east); margin-left: 8px; }
 .scale i { display: block; height: 4px; border: 1px solid var(--ink-soft); border-top: 0; margin-bottom: 3px; }
 .legend { position: absolute; left: 12px; top: 10px; display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 12px; color: var(--ink-soft); background: color-mix(in srgb, var(--ground) 85%, transparent); padding: 4px 8px; border-radius: 4px; }
 .legend span { display: inline-flex; align-items: center; gap: 5px; }
 .legend i { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
 
+.layers { position: absolute; left: 12px; top: 40px; width: min(320px, calc(100% - 70px)); background: var(--panel); border: 1px solid var(--rule); border-radius: 6px; padding: 10px 12px; font-size: 12px; box-shadow: 0 6px 18px rgba(0,0,0,.12); display: grid; gap: 6px; z-index: 1; }
+.layers h2 { font-family: var(--font-display); font-size: 1.05rem; font-weight: 600; margin: 0; }
+.layers label { display: grid; gap: 2px; color: var(--ink-soft); }
+.layers label.check { display: flex; gap: 6px; align-items: center; color: var(--ink); }
+.layers input:not([type="checkbox"]), .layers select { font: inherit; font-family: var(--font-data); font-size: 11px; padding: 4px 6px; border: 1px solid var(--rule); border-radius: 3px; background: var(--ground); color: var(--ink); min-width: 0; }
+.layers .two { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.layers .note { color: var(--ink-soft); margin: 0; line-height: 1.4; }
 .card { position: absolute; right: 52px; top: 10px; width: 230px; background: var(--panel); border: 1px solid var(--rule); border-radius: 6px; padding: 10px 12px; font-size: 13px; box-shadow: 0 6px 18px rgba(0,0,0,.12); }
 .card h2 { font-family: var(--font-display); font-size: 1.15rem; font-weight: 600; margin: 0 0 2px; text-wrap: balance; }
 .card dl { display: grid; grid-template-columns: auto 1fr; gap: 2px 10px; margin: 8px 0; font-size: 12px; }
@@ -75,7 +83,7 @@ main { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 0; min-h
 
 aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: var(--panel); }
 .tabs { display: flex; border-bottom: 1px solid var(--rule); }
-.tabs button { flex: 1; background: none; border: 0; padding: 9px 0 8px; font-family: var(--font-display); font-weight: 600; font-size: 15px; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-soft); border-bottom: 2px solid transparent; }
+.tabs button { flex: 1; background: none; border: 0; padding: 9px 0 8px; font-family: var(--font-display); font-weight: 600; font-size: 14px; letter-spacing: .05em; text-transform: uppercase; color: var(--ink-soft); border-bottom: 2px solid transparent; }
 .tabs button[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--accent); }
 .pane { overflow-y: auto; min-height: 0; }
 .filters { display: flex; flex-wrap: wrap; gap: 4px 10px; padding: 8px 12px; border-bottom: 1px solid var(--rule); font-size: 12px; color: var(--ink-soft); position: sticky; top: 0; background: var(--panel); }
@@ -100,6 +108,42 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
 .roster .dead { color: var(--dead); text-decoration: line-through; }
 .roster small { font-family: var(--font-data); font-size: 11px; color: var(--ink-soft); }
 
+.seg { display: flex; gap: 2px; padding: 8px 12px; border-bottom: 1px solid var(--rule); position: sticky; top: 0; background: var(--panel); z-index: 1; }
+.seg button { border: 1px solid var(--rule); background: var(--panel); padding: 3px 9px; font-size: 12px; border-radius: 3px; }
+.seg button[aria-pressed="true"] { background: var(--ink); color: var(--ground); border-color: var(--ink); }
+.roster h4.node { display: flex; justify-content: space-between; gap: 8px; color: var(--ink); font-weight: 600; }
+.roster h4.node small { font-weight: 400; }
+.roster .indent { border-left: 1px solid var(--rule); margin-left: 16px; }
+.sec { padding: 10px 12px; border-bottom: 1px solid var(--rule); }
+.sec h3 { font-family: var(--font-display); font-size: 13px; letter-spacing: .1em; text-transform: uppercase; margin: 0 0 6px; }
+.kv { display: grid; grid-template-columns: max-content 1fr; gap: 3px 12px; margin: 0; font-size: 13px; }
+.kv dt { color: var(--ink-soft); }
+.kv dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+.kv dd.num { font-family: var(--font-data); font-size: 12px; font-variant-numeric: tabular-nums; }
+.chips { display: flex; flex-wrap: wrap; gap: 4px; }
+.chips span { font-family: var(--font-data); font-size: 11px; border: 1px solid var(--rule); border-radius: 3px; padding: 1px 5px; }
+.overview { margin: 6px 0 0; font-size: 13px; line-height: 1.45; color: var(--ink-soft); }
+.tbl { width: 100%; border-collapse: collapse; font-size: 12px; }
+.tbl th { text-align: left; font-weight: 500; color: var(--ink-soft); padding: 3px 4px; border-bottom: 1px solid var(--rule); }
+.tbl td { padding: 3px 4px; border-bottom: 1px solid var(--rule); font-variant-numeric: tabular-nums; }
+.tbl .n { text-align: right; font-family: var(--font-data); }
+.tbl tr[data-type] { cursor: pointer; }
+.tbl tr[data-type]:hover, .tbl tr[aria-selected="true"] { background: color-mix(in srgb, var(--accent) 12%, transparent); }
+.stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.stats div { border: 1px solid var(--rule); border-radius: 4px; padding: 6px 8px; }
+.stats b { display: block; font-family: var(--font-data); font-size: 16px; font-weight: 500; font-variant-numeric: tabular-nums; }
+.stats small { color: var(--ink-soft); font-size: 11px; }
+.chart { position: relative; margin-top: 4px; }
+.chart canvas { width: 100%; height: 110px; display: block; cursor: crosshair; }
+.chart .key { display: flex; gap: 12px; font-size: 11px; color: var(--ink-soft); }
+.chart .key i { display: inline-block; width: 14px; height: 0; border-top: 2px solid var(--ink); vertical-align: middle; margin-right: 4px; }
+.chart .key i.dash { border-top: 2px dashed var(--ink-soft); }
+.tip { position: absolute; pointer-events: none; background: var(--ground); border: 1px solid var(--rule); border-radius: 4px; padding: 4px 7px; font-family: var(--font-data); font-size: 11px; white-space: nowrap; box-shadow: 0 4px 12px rgba(0,0,0,.12); z-index: 2; }
+.raw { list-style: none; margin: 0; padding: 0; }
+.raw li { display: grid; grid-template-columns: 52px 1fr; gap: 8px; padding: 5px 12px; border-bottom: 1px solid var(--rule); }
+.raw time { font-family: var(--font-data); font-size: 12px; color: var(--accent); cursor: pointer; }
+.raw code { font-family: var(--font-data); font-size: 11px; overflow-wrap: anywhere; color: var(--ink-soft); }
+.search { width: 100%; font: inherit; font-size: 13px; padding: 5px 8px; border: 1px solid var(--rule); border-radius: 4px; background: var(--ground); color: var(--ink); }
 .transport { display: grid; grid-template-columns: auto auto 1fr auto; gap: 12px; align-items: center; padding-block: 10px 12px; border-top: 1px solid var(--rule); }
 .play { width: 40px; height: 40px; border-radius: 50%; border: 0; background: var(--ink); color: var(--ground); display: grid; place-items: center; }
 .clock { font-family: var(--font-data); font-variant-numeric: tabular-nums; font-size: 15px; }
@@ -146,21 +190,46 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
         <button class="btn" id="zin" aria-label="Zoom in">+</button>
         <button class="btn" id="zout" aria-label="Zoom out">−</button>
         <button class="btn" id="zfit" aria-label="Fit to recording">⤢</button>
+        <button class="btn" id="zlayers" aria-label="Map background" aria-expanded="false"><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" d="M8 2 1.5 5.5 8 9l6.5-3.5zM1.5 8.5 8 12l6.5-3.5M1.5 11 8 14.5l6.5-3.5"/></svg></button>
       </div>
-      <div class="scale" id="scale"><i></i><span></span></div>
+      <div class="scale" id="scale"><i></i><span></span> <em id="tilenote"></em></div>
       <div class="card" id="card" hidden></div>
+      <form class="layers" id="layers" hidden onsubmit="return false">
+        <h2>Map background</h2>
+        <label class="check"><input type="checkbox" id="tl-on"> Show map tiles</label>
+        <label>Tile URL <input id="tl-url" spellcheck="false"></label>
+        <div class="two">
+          <label>World <input id="tl-world" spellcheck="false"></label>
+          <label>World size (m) <input id="tl-size" inputmode="numeric"></label>
+        </div>
+        <div class="two">
+          <label>Highest zoom <input id="tl-max" type="number" min="0" max="22"></label>
+          <label>Tile row 0 is <select id="tl-tms"><option value="0">north (XYZ)</option><option value="1">south (TMS)</option></select></label>
+        </div>
+        <p class="note">{world}, {z}, {x} and {y} are filled in. At zoom 0 the whole world is one 256 px tile. <span id="tl-status"></span></p>
+        <p class="note" id="tl-last-wrap" hidden>Last tile asked for: <a id="tl-last" target="_blank" rel="noopener"></a></p>
+      </form>
     </div>
 
     <aside>
       <div class="tabs" role="tablist">
         <button role="tab" id="tab-events" aria-selected="true">Events</button>
         <button role="tab" id="tab-units" aria-selected="false">Units</button>
+        <button role="tab" id="tab-mission" aria-selected="false">Mission</button>
+        <button role="tab" id="tab-server" aria-selected="false">Server</button>
+        <button role="tab" id="tab-data" aria-selected="false">Data</button>
       </div>
       <div class="pane" id="pane-events">
         <div class="filters" id="filters"></div>
         <ol class="feed" id="feed"></ol>
       </div>
-      <div class="pane roster" id="pane-units" hidden></div>
+      <div class="pane" id="pane-units" hidden>
+        <div class="seg" id="unitmode" hidden><button data-m="orbat" aria-pressed="true">ORBAT</button><button data-m="groups" aria-pressed="false">Groups</button></div>
+        <div class="roster" id="roster"></div>
+      </div>
+      <div class="pane" id="pane-mission" hidden></div>
+      <div class="pane" id="pane-server" hidden></div>
+      <div class="pane" id="pane-data" hidden></div>
     </aside>
   </main>
 
@@ -183,8 +252,11 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
   const SPEEDS = [1, 2, 4, 8, 16];
   const FILTERS = [
     ["kills", "Kills", true], ["hits", "Hits", true], ["vehicles", "Vehicles", true],
-    ["players", "Players", true], ["markers", "Markers", true], ["shots", "Shots", false],
+    ["players", "Players", true], ["markers", "Markers", true], ["ai", "AI", true], ["world", "World", true],
+    ["shots", "Shots", false],
   ];
+  // Record types the parser files somewhere other than the event feed.
+  const NOT_EVENTS = new Set(["header", "entity", "snap", "deleted", "submunition", "proj_end", "orbat", "perf"]);
 
   let rec = null;               // parsed recording
   let t = 0, playing = false, speed = 4;
@@ -192,33 +264,64 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
   let view = { cx: 0, cy: 0, scale: 1 };   // world centre and pixels per metre
   const filters = Object.fromEntries(FILTERS.map(f => [f[0], f[2]]));
 
+  const KNOWN = new Set(["end", "group", "player", "shot", "proj_hit", "proj_splash", "killed", "hit", "loadout", "perf_spike", "idle", "building",
+    "marker_created", "marker_updated", "marker_deleted", "get_in", "get_out", "seat", "respawn", "connected", "disconnected", "combat_mode", "enemy_detected", "fleeing"]);
+
   // ---------- parsing ----------
   function parse(text, label) {
-    const r = { header: {}, end: null, entities: new Map(), shots: new Map(), hits: [], kills: [], events: [], duration: 0, label };
+    const r = { header: {}, end: null, entities: new Map(), shots: new Map(), hits: [], kills: [], events: [], duration: 0, label,
+      counts: new Map(), raw: new Map(), orbat: null, perf: [], spikes: [], idle: [], markers: new Map(), buildings: [], damage: [] };
     const ent = id => {
       let e = r.entities.get(id);
-      if (!e) { e = { id, kind: "unit", name: "#" + id, side: "UNKNOWN", group: "", display: "", cls: "", player: false, states: [], groups: [], players: [], shots: 0, kills: 0 }; r.entities.set(id, e); }
+      if (!e) { e = { id, kind: "unit", name: "#" + id, side: "UNKNOWN", group: "", display: "", cls: "", player: false, states: [], groups: [], players: [], orbats: [], shots: 0, kills: 0, info: {} }; r.entities.set(id, e); }
       return e;
     };
     let bad = 0;
     for (const line of text.split(/\r?\n/)) {
       if (!line.trim()) continue;
       let o; try { o = JSON.parse(line); } catch { bad++; continue; }
-      if (typeof o.t === "number") r.duration = Math.max(r.duration, o.t);
+      if (!o || typeof o !== "object") { bad++; continue; }
+      if (typeof o.t !== "number") o.t = 0;
+      r.duration = Math.max(r.duration, o.t);
+      const ty = String(o.type ?? "(no type)");
+      r.counts.set(ty, (r.counts.get(ty) || 0) + 1);
+      if (!r.raw.has(ty)) r.raw.set(ty, []);
+      r.raw.get(ty).push(o);
+      if (!NOT_EVENTS.has(ty) && !KNOWN.has(ty)) { r.events.push(o); continue; }
       switch (o.type) {
         case "header": r.header = o; break;
         case "end": r.end = o; r.events.push(o); break;
         case "entity": {
           const e = ent(o.id);
           Object.assign(e, { kind: o.kind, cls: o.class, display: o.display || o.class, side: o.side, name: o.name || o.display || o.class, group: o.group || "", player: !!o.player, uid: o.uid || "" });
+          e.info = o;
+          for (const k of ["role", "role_name", "loadout_faction", "callsign", "orbat_team"]) if (o[k] !== undefined) e[k] = o[k];
           e.groups.push([o.t, o.group || "", o.side]);
+          if (o.orbat !== undefined) e.orbats.push([o.t, o.orbat]);
           if (o.player) e.players.push([o.t, o.uid, o.name]);
           break;
         }
         case "snap":
           for (const s of o.e) ent(s[0]).states.push([o.t, s[1], s[2], s[3], s[4], s[5], s[6], s[7]]);
           break;
-        case "group": ent(o.unit).groups.push([o.t, o.group, o.side]); r.events.push(o); break;
+        case "group": { const e = ent(o.unit); e.groups.push([o.t, o.group, o.side]); if (o.orbat !== undefined) e.orbats.push([o.t, o.orbat]); r.events.push(o); break; }
+        case "loadout": { const e = ent(o.unit); for (const k of ["role", "role_name", "loadout_faction"]) if (o[k] !== undefined) e[k] = o[k]; r.events.push(o); break; }
+        case "orbat": r.orbat = o; break;
+        case "perf": r.perf.push(o); break;
+        case "perf_spike": r.spikes.push(o); r.events.push(o); break;
+        case "idle": if (o.idle) r.idle.push([o.t, null]); else if (r.idle.length && r.idle.at(-1)[1] === null) r.idle.at(-1)[1] = o.t; r.events.push(o); break;
+        case "building": r.buildings.push(o); r.events.push(o); break;
+        case "marker_created": case "marker_updated": case "marker_deleted": {
+          let m = r.markers.get(o.marker);
+          if (!m) { m = { states: [], deletedAt: undefined }; r.markers.set(o.marker, m); }
+          if (o.type === "marker_deleted") m.deletedAt = o.t;
+          else {
+            const p = m.states.at(-1) || [0, null, "", "", ""];
+            m.states.push([o.t, o.pos || p[1], o.text ?? p[2], o.color ?? p[3], o.markerType ?? p[4]]);
+            if (o.type === "marker_created") m.deletedAt = undefined;
+          }
+          r.events.push(o); break;
+        }
         case "player": ent(o.unit).players.push([o.t, o.uid, o.name]); r.events.push(o); break;
         case "deleted": ent(o.id).deletedAt = o.t; break;
         case "shot": r.shots.set(o.id, { id: o.id, t0: o.t, p0: o.pos, v: o.vel, shooter: o.shooter, gunner: o.instigator || 0, ammo: o.ammo, weapon: o.weapon, parent: o.parent }); if (o.shooter) ent(o.shooter).shots++; r.events.push(o); break;
@@ -226,8 +329,8 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
         case "proj_end": { const s = r.shots.get(o.id); if (s) { s.t1 = o.t; s.p1 = o.pos; s.exploded = o.exploded; } break; }
         case "proj_hit": case "proj_splash": r.hits.push(o); r.events.push(o); break;
         case "killed": r.kills.push(o); if (o.instigator || o.killer) ent(o.instigator || o.killer).kills++; r.events.push(o); break;
-        case "hit": case "get_in": case "get_out": case "respawn": case "connected": case "disconnected":
-        case "marker_created": case "marker_updated": case "marker_deleted": r.events.push(o); break;
+        case "hit": r.damage.push(o); r.events.push(o); break;
+        default: r.events.push(o); break;
       }
     }
     if (!r.entities.size && !r.shots.size) throw new Error(bad ? "This file is not an AAR recording (no lines could be read)." : "This recording has no units or shots in it.");
@@ -240,6 +343,16 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
     for (const e of r.entities.values()) for (const s of e.states) { x0 = Math.min(x0, s[1]); x1 = Math.max(x1, s[1]); y0 = Math.min(y0, s[2]); y1 = Math.max(y1, s[2]); }
     if (!isFinite(x0)) { x0 = y0 = 0; x1 = y1 = 1000; }
     r.bounds = { x0, y0, x1, y1 };
+    for (const i of r.idle) if (i[1] === null) i[1] = r.duration;
+    r.perf.sort((a, b) => a.t - b.t);
+    r.spikes.sort((a, b) => a.t - b.t);
+    for (const m of r.markers.values()) m.states.sort((a, b) => a[0] - b[0]);
+    // ORBAT node index. TMF node ids are unique across the whole tree, so one map covers every team.
+    r.nodes = new Map();
+    if (r.orbat && Array.isArray(r.orbat.teams)) {
+      const walk = (n, team, path) => { if (!n || typeof n !== "object") return; const p = [...path, n]; r.nodes.set(n.id, { node: n, team, path: p }); for (const c of n.children || []) walk(c, team, p); };
+      for (const team of r.orbat.teams) walk(team, team, []);
+    }
     r.bad = bad;
     return r;
   }
@@ -272,6 +385,8 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
     return p && p[1] ? p[2] : e.name;
   }
   function isPlayerAt(e, time) { const p = lastOf(e.players, time); return !!(p && p[1]); }
+  function uidAt(e, time) { const p = lastOf(e.players, time); return p && p[1] ? p[1] : ""; }
+  function orbatAt(e, time) { const o = lastOf(e.orbats, time); return o ? o[1] : undefined; }
 
   // ---------- colours ----------
   let C = {};
@@ -280,6 +395,11 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
     for (const k of ["ground", "panel", "ink", "ink-soft", "rule", "grid", "grid-major", "accent", "west", "east", "guer", "civ", "dead"]) C[k] = cs.getPropertyValue("--" + k).trim();
   }
   const sideColor = s => ({ WEST: C.west, EAST: C.east, GUER: C.guer, CIV: C.civ })[s] || C["ink-soft"];
+  // Arma marker colour classes; anything unknown is drawn in the soft ink colour.
+  const MARKER_COLORS = { ColorBLUFOR: "west", ColorWEST: "west", ColorBlue: "west", ColorOPFOR: "east", ColorEAST: "east", ColorRed: "east",
+    ColorIndependent: "guer", ColorGUER: "guer", ColorGreen: "guer", ColorCivilian: "civ", ColorCIV: "civ", ColorPink: "civ", ColorBlack: "ink",
+    ColorOrange: "accent", ColorYellow: "accent" };
+  const markerColor = c => C[MARKER_COLORS[c] || "ink-soft"];
   const sideName = s => ({ WEST: "BLUFOR", EAST: "OPFOR", GUER: "Independent", CIV: "Civilian" })[s] || s;
 
   // ---------- formatting ----------
@@ -302,6 +422,7 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
     map.width = Math.round(W * DPR); map.height = Math.round(H * DPR);
     const tr = tl.getBoundingClientRect(); tl.width = Math.round(tr.width * DPR); tl.height = Math.round(tr.height * DPR);
     tlDirty = true;
+    for (const c of charts) c.base = null;
   }
   const toScreen = (x, y) => [W / 2 + (x - view.cx) * view.scale, H / 2 - (y - view.cy) * view.scale];
   const toWorld = (sx, sy) => [view.cx + (sx - W / 2) / view.scale, view.cy - (sy - H / 2) / view.scale];
@@ -345,7 +466,7 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
     const nice = [1, 2, 5, 10, 20, 50, 100, 200, 500, 1000, 2000, 5000, 10000];
     const m = nice.find(n => n * view.scale >= 70) || 10000;
     $("scale").firstElementChild.style.width = (m * view.scale) + "px";
-    $("scale").lastElementChild.textContent = m >= 1000 ? m / 1000 + " km" : m + " m";
+    $("scale").querySelector("span").textContent = m >= 1000 ? m / 1000 + " km" : m + " m";
   }
 
   function drawUnit(ctx, sx, sy, dir, col, alive, isPlayer, sel, r = 5) {
@@ -376,6 +497,75 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
     if (sel) { ctx.strokeStyle = C.accent; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(sx, sy, L + 6, 0, Math.PI * 2); ctx.stroke(); }
   }
 
+  // ---------- map tiles ----------
+  // Tiles cover the square world [0, world size] in metres; zoom z splits it into 2^z × 2^z tiles of 256 px.
+  // Missing tiles (sea, or zooms the server does not have) fall back to the nearest parent tile.
+  const WORLD_SIZES = { altis: 30720, stratis: 8192, tanoa: 15360, malden: 12800, enoch: 12800, vr: 8192 };
+  const tiles = { on: true, url: "https://mission-db.1tac.eu/tiles/{world}/tiles/{z}/{x}/{y}.png", maxZoom: 10, tms: false, world: "", size: 0 };
+  try { Object.assign(tiles, JSON.parse(localStorage.getItem("aar-tiles") || "{}")); } catch {}
+  const saveTiles = () => { try { localStorage.setItem("aar-tiles", JSON.stringify({ on: tiles.on, url: tiles.url, maxZoom: tiles.maxZoom, tms: tiles.tms })); } catch {} };
+  const tileCache = new Map();
+  let tileStats = { ok: 0, failed: 0 }, lastTile = "";
+  function tileAt(z, x, y) {
+    const n = 2 ** z, row = tiles.tms ? n - 1 - y : y;
+    const url = tiles.url.replaceAll("{world}", encodeURIComponent(tiles.world)).replaceAll("{z}", z).replaceAll("{x}", x).replaceAll("{y}", row);
+    let c = tileCache.get(url);
+    if (!c) {
+      if (tileCache.size > 3000) tileCache.clear();
+      const img = new Image();
+      c = { img, ok: null };
+      img.onload = () => { c.ok = true; tileStats.ok++; };
+      img.onerror = () => { c.ok = false; tileStats.failed++; };
+      img.src = url; lastTile = url;
+      tileCache.set(url, c);
+    }
+    return c;
+  }
+  function drawTiles() {
+    const ws = tiles.size;
+    if (!tiles.on || !ws || !tiles.world || !tiles.url) return;
+    const ctx = mctx;
+    const z = Math.max(0, Math.min(tiles.maxZoom, Math.ceil(Math.log2(view.scale * ws / 256 * DPR))));
+    const n = 2 ** z, tm = ws / n;
+    const [wx0, wy1] = toWorld(0, 0), [wx1, wy0] = toWorld(W, H);
+    const c0 = Math.max(0, Math.floor(wx0 / tm)), c1 = Math.min(n - 1, Math.floor(wx1 / tm));
+    const r0 = Math.max(0, Math.floor((ws - wy1) / tm)), r1 = Math.min(n - 1, Math.floor((ws - wy0) / tm));
+    if (c1 < c0 || r1 < r0 || (c1 - c0 + 1) * (r1 - r0 + 1) > 600) return;
+    const dark = matchMedia("(prefers-color-scheme: dark)").matches && document.documentElement.dataset.theme !== "light" || document.documentElement.dataset.theme === "dark";
+    ctx.save();
+    if (dark) ctx.filter = "brightness(.62) saturate(.8)";
+    for (let r = r0; r <= r1; r++) for (let c = c0; c <= c1; c++) {
+      // Screen box of tile (z, c, r); row 0 is the north edge of the world.
+      const [sx0, sy0] = toScreen(c * tm, ws - r * tm), [sx1, sy1] = toScreen((c + 1) * tm, ws - (r + 1) * tm);
+      let zz = z, cc = c, rr = r, t = tileAt(zz, cc, rr);
+      while (!t.ok && zz > 0 && z - zz < 6) { zz--; cc >>= 1; rr >>= 1; t = tileAt(zz, cc, rr); }
+      if (!t.ok) continue;
+      if (zz === z) { ctx.drawImage(t.img, sx0 - .25, sy0 - .25, sx1 - sx0 + .5, sy1 - sy0 + .5); continue; }
+      // Draw the part of the parent tile that covers this one.
+      const k = 2 ** (z - zz), w = t.img.naturalWidth / k, h = t.img.naturalHeight / k;
+      ctx.drawImage(t.img, (c - cc * k) * w, (r - rr * k) * h, w, h, sx0 - .25, sy0 - .25, sx1 - sx0 + .5, sy1 - sy0 + .5);
+    }
+    ctx.restore();
+  }
+  function syncTilesForm() {
+    $("tl-on").checked = tiles.on; $("tl-url").value = tiles.url; $("tl-world").value = tiles.world;
+    $("tl-size").value = tiles.size || ""; $("tl-max").value = tiles.maxZoom; $("tl-tms").value = tiles.tms ? "1" : "0";
+  }
+  $("zlayers").onclick = () => { const open = $("layers").hidden; $("layers").hidden = !open; $("zlayers").setAttribute("aria-expanded", open); if (open) syncTilesForm(); };
+  $("layers").addEventListener("input", () => {
+    tiles.on = $("tl-on").checked; tiles.url = $("tl-url").value.trim(); tiles.world = $("tl-world").value.trim();
+    tiles.size = +$("tl-size").value || 0; tiles.maxZoom = Math.max(0, Math.min(22, Math.round(+$("tl-max").value || 0))); tiles.tms = $("tl-tms").value === "1";
+    tileStats = { ok: 0, failed: 0 };
+    saveTiles();
+  });
+  setInterval(() => {
+    const failing = tiles.on && rec && tileStats.failed > 0 && tileStats.ok === 0;
+    $("tilenote").textContent = !tiles.on || !rec ? "" : !tiles.size ? "Map tiles off: world size unknown" : failing ? "Map tiles failed to load (" + tileStats.failed + "), see the layers button" : "";
+    if ($("layers").hidden) return;
+    $("tl-status").textContent = !tiles.size ? "Enter the world size to place the tiles." : tileStats.ok || tileStats.failed ? tileStats.ok + " tiles loaded, " + tileStats.failed + " missing." : "";
+    $("tl-last-wrap").hidden = !lastTile; $("tl-last").href = lastTile; $("tl-last").textContent = lastTile;
+  }, 500);
+
   let drawn = [];   // [id, sx, sy] for picking
   function drawMap() {
     const ctx = mctx;
@@ -383,6 +573,7 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
     ctx.fillStyle = C.ground; ctx.fillRect(0, 0, W, H);
     if (!rec) return;
     if (follow && selected) { const e = rec.entities.get(selected), s = e && stateAt(e, t); if (s) { view.cx = s.x; view.cy = s.y; } }
+    drawTiles();
     drawGrid();
 
     // kill sites
@@ -393,6 +584,30 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
       ctx.strokeStyle = C.east; ctx.globalAlpha = age < 2 ? 1 : 0.35; ctx.lineWidth = 2;
       ctx.beginPath(); ctx.arc(sx, sy, 9 + (age < 1 ? (1 - age) * 10 : 0), 0, Math.PI * 2); ctx.stroke();
       ctx.globalAlpha = 1;
+    }
+
+    // destroyed buildings
+    for (const b of rec.buildings) {
+      if (b.t > t || !b.pos) continue;
+      const [sx, sy] = toScreen(b.pos[0], b.pos[1]);
+      ctx.strokeStyle = C.dead; ctx.lineWidth = 1.5; ctx.strokeRect(sx - 5, sy - 5, 10, 10);
+      ctx.beginPath(); ctx.moveTo(sx - 5, sy - 5); ctx.lineTo(sx + 5, sy + 5); ctx.stroke();
+    }
+
+    // map markers
+    ctx.font = "600 12px " + getComputedStyle(document.body).getPropertyValue("--font-ui");
+    for (const m of rec.markers.values()) {
+      if (m.deletedAt !== undefined && t >= m.deletedAt) continue;
+      const st = lastOf(m.states, t); if (!st || !st[1]) continue;
+      const [sx, sy] = toScreen(st[1][0], st[1][1]);
+      const col = markerColor(st[3]);
+      ctx.fillStyle = col; ctx.strokeStyle = C.ground; ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.moveTo(sx, sy - 6); ctx.lineTo(sx + 6, sy); ctx.lineTo(sx, sy + 6); ctx.lineTo(sx - 6, sy); ctx.closePath(); ctx.fill(); ctx.stroke();
+      if (st[2]) {
+        ctx.textAlign = "left"; ctx.textBaseline = "middle";
+        ctx.lineWidth = 3; ctx.strokeStyle = C.ground; ctx.strokeText(st[2], sx + 9, sy);
+        ctx.fillStyle = C.ink; ctx.fillText(st[2], sx + 9, sy);
+      }
     }
 
     // tracers
@@ -468,6 +683,8 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
       tctx.clearRect(0, 0, w, h);
       tctx.fillStyle = C.panel; tctx.fillRect(0, 8, w, h - 16);
       if (rec && rec.duration > 0) {
+        tctx.fillStyle = C["grid-major"];
+        for (const [a, b] of rec.idle) tctx.fillRect(a / rec.duration * w, 8, Math.max(1, (b - a) / rec.duration * w), h - 16);
         const D = rec.duration, bins = Math.max(10, Math.floor(w / 3)), counts = new Array(bins).fill(0);
         for (const s of rec.shotList) counts[Math.min(bins - 1, Math.floor(s.t0 / D * bins))]++;
         const mx = Math.max(1, ...counts);
@@ -476,6 +693,8 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
         tctx.globalAlpha = 1;
         tctx.fillStyle = C.east;
         for (const k of rec.kills) { const x = k.t / D * w; tctx.fillRect(x - 1, 0, 2, 12); }
+        tctx.fillStyle = C.accent;
+        for (const k of rec.spikes) { const x = k.t / D * w; tctx.fillRect(x - 1, h - 20, 2, 12); }
         tctx.fillStyle = C["ink-soft"]; tctx.font = "10px " + getComputedStyle(document.body).getPropertyValue("--font-data"); tctx.textBaseline = "bottom";
         const step = [10, 30, 60, 120, 300, 600, 1200, 1800, 3600].find(s => s / D * w > 70) || 3600;
         for (let s = step; s < D; s += step) { const x = s / D * w; tctx.fillRect(x, h - 8, 1, 4); tctx.fillText(fmt(s), x + 2, h); }
@@ -499,7 +718,15 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
       case "hit": return ["hits", who(o.unit, o.t) + ' took <span class="tag">' + Math.round(o.damage * 100) + "%</span> damage" + (o.instigator || o.source ? " from " + who(o.instigator || o.source, o.t) : "")];
       case "shot": return ["shots", who(o.instigator || o.shooter, o.t) + ' fired <span class="tag">' + esc(o.weapon || o.ammo) + "</span>"];
       case "get_in": return ["vehicles", who(o.unit, o.t) + " got in " + who(o.vehicle, o.t) + ' <span class="tag">' + esc(o.role) + "</span>"];
-      case "get_out": return ["vehicles", who(o.unit, o.t) + " got out of " + who(o.vehicle, o.t)];
+      case "get_out": return ["vehicles", who(o.unit, o.t) + (o.eject ? " ejected from " : " got out of ") + who(o.vehicle, o.t)];
+      case "seat": return ["vehicles", who(o.unit, o.t) + " moved to " + esc(o.role) + " in " + who(o.vehicle, o.t)];
+      case "loadout": return ["players", who(o.unit, o.t) + " got the " + esc(o.role_name || o.role) + ' loadout <span class="tag">' + esc(o.loadout_faction) + "</span>"];
+      case "combat_mode": return ["ai", '<span class="who s-' + esc(o.side) + '">' + esc(o.group) + '</span> is now <span class="tag">' + esc(o.mode) + "</span>"];
+      case "enemy_detected": return ["ai", '<span class="who s-' + esc(o.side) + '">' + esc(o.group) + "</span> spotted " + who(o.target, o.t)];
+      case "fleeing": return ["ai", '<span class="who s-' + esc(o.side) + '">' + esc(o.group) + "</span> " + (o.fleeing ? "started fleeing" : "stopped fleeing")];
+      case "building": return ["world", (o.ruin ? "Building destroyed" : "Building changed") + ' <span class="tag">' + esc(o.from) + "</span>" + (o.pos ? ' <span class="tag">' + grid(o.pos[0], o.pos[1]) + "</span>" : "")];
+      case "idle": return ["world", o.idle ? "Server empty, recording paused" : "Players back, recording resumed"];
+      case "perf_spike": return ["world", 'Server frame took <span class="tag">' + Math.round(o.frame_ms) + " ms</span>" + (o.recorder_ms !== undefined ? ' <span class="tag">recorder ' + (+o.recorder_ms).toFixed(1) + " ms</span>" : "")];
       case "connected": return ["players", '<span class="who">' + esc(o.name) + "</span> connected" + (o.jip ? ' <span class="tag">JIP</span>' : "")];
       case "disconnected": return ["players", '<span class="who">' + esc(o.name) + "</span> disconnected"];
       case "player": return ["players", o.uid ? '<span class="who">' + esc(o.name) + "</span> took control of " + who(o.unit, o.t - 0.001) : who(o.unit, o.t) + " is now AI"];
@@ -507,10 +734,12 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
       case "respawn": return ["players", who(o.new, o.t) + " respawned"];
       case "marker_created": return ["markers", "Marker placed" + (o.text ? ": " + esc(o.text) : "") + (o.pos ? ' <span class="tag">' + grid(o.pos[0], o.pos[1]) + "</span>" : "")];
       case "marker_updated": return ["markers", "Marker moved" + (o.text ? ": " + esc(o.text) : "")];
-      case "marker_deleted": return ["markers", "Marker removed"];
+      case "marker_deleted": { const m = rec.markers.get(o.marker), st = m && lastOf(m.states, o.t); return ["markers", "Marker removed" + (st && st[2] ? ": " + esc(st[2]) : "") + (o.by ? " by " + who(o.by, o.t) : "")]; }
       case "end": return [null, '<span class="k">Mission ended</span> <span class="tag">' + esc(o.reason) + "</span>"];
     }
-    return null;
+    // A record type this page does not know: show its fields as they are.
+    const f = Object.entries(o).filter(([k]) => k !== "type" && k !== "t").map(([k, v]) => esc(k) + "=" + esc(typeof v === "object" ? JSON.stringify(v) : v)).join(" ");
+    return ["world", '<span class="k">' + esc(o.type) + '</span> <span class="tag">' + f.slice(0, 300) + "</span>"];
   }
   let feedKey = "";
   function renderFeed(force) {
@@ -529,12 +758,15 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
   }
 
   // ---------- roster ----------
-  let rosterKey = "";
-  function renderRoster(force) {
-    if (!rec || $("pane-units").hidden) return;
-    const key = Math.floor(t) + "|" + selected;
-    if (!force && key === rosterKey) return;
-    rosterKey = key;
+  let rosterKey = "", unitMode = "orbat";
+  const SIDE_VAR = { WEST: "west", EAST: "east", GUER: "guer", CIV: "civ" };
+  function unitButton(e, sd) {
+    const s = stateAt(e, t), dead = s && !s.alive;
+    const sub = e.role_name || e.callsign || e.display;
+    return '<button data-id="' + e.id + '" aria-pressed="' + (e.id === selected) + '"><i class="dot" style="background:' + (dead ? "var(--dead)" : "var(--" + (SIDE_VAR[sd] || "ink-soft") + ")") + '"></i><span class="' + (dead ? "dead" : "") + '">' + esc(nameAt(e, t)) + (isPlayerAt(e, t) ? " <small>player</small>" : "") + "</span><small>" + esc(sub) + "</small></button>";
+  }
+  const aliveUnit = e => { if (e.kind !== "unit") return null; const s = stateAt(e, t); return s ? s.alive : null; };
+  function renderGroups() {
     const sides = new Map();
     for (const e of rec.entities.values()) {
       const sd = sideAt(e, t), g = e.kind === "unit" ? (groupAt(e, t) || "No group") : "Vehicles";
@@ -544,17 +776,56 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
     let html = "";
     for (const [sd, gm] of [...sides].sort()) {
       let alive = 0, total = 0;
-      for (const list of gm.values()) for (const e of list) { if (e.kind !== "unit") continue; total++; const s = stateAt(e, t); if (s && s.alive) alive++; }
+      for (const list of gm.values()) for (const e of list) { const a = aliveUnit(e); if (a === null) continue; total++; if (a) alive++; }
       html += '<h3 class="s-' + esc(sd) + '">' + esc(sideName(sd)) + "<span>" + alive + "/" + total + " alive</span></h3>";
       for (const [g, list] of [...gm].sort((a, b) => (a[0] === "Vehicles") - (b[0] === "Vehicles") || a[0].localeCompare(b[0]))) {
         html += "<h4>" + esc(g) + "</h4>";
-        for (const e of list) {
-          const s = stateAt(e, t), dead = s && !s.alive;
-          html += '<button data-id="' + e.id + '" aria-pressed="' + (e.id === selected) + '"><i class="dot" style="background:' + (dead ? "var(--dead)" : "var(--" + ({ WEST: "west", EAST: "east", GUER: "guer", CIV: "civ" }[sd] || "ink-soft") + ")") + '"></i><span class="' + (dead ? "dead" : "") + '">' + esc(nameAt(e, t)) + (isPlayerAt(e, t) ? ' <small>player</small>' : "") + "</span><small>" + esc(e.kind === "unit" ? e.display : e.display) + "</small></button>";
-        }
+        for (const e of list) html += unitButton(e, sd);
       }
     }
-    $("pane-units").innerHTML = html;
+    return html;
+  }
+  // TMF ORBAT: every node lists the units and vehicles placed under it; an entity without a node
+  // belongs under the root of its side's tree, as in TMF's briefing.
+  function renderOrbat() {
+    const at = new Map(), loose = [];
+    const rootFor = sd => rec.orbat.teams.find(tm => tm.side === sd);
+    for (const e of rec.entities.values()) {
+      const sd = sideAt(e, t);
+      const id = orbatAt(e, t);
+      const n = id !== undefined && rec.nodes.get(id);
+      const node = n ? n.node : rootFor(sd);
+      if (!node) { loose.push(e); continue; }
+      if (!at.has(node)) at.set(node, []); at.get(node).push(e);
+    }
+    const count = node => { let a = 0, n = 0; for (const e of at.get(node) || []) { const x = aliveUnit(e); if (x === null) continue; n++; if (x) a++; } for (const c of node.children || []) { const [ca, cn] = count(c); a += ca; n += cn; } return [a, n]; };
+    const draw = (node, sd) => {
+      const [a, n] = count(node);
+      let h = '<h4 class="node"><span>' + esc(node.name || "Node " + node.id) + (node.full_name && node.full_name !== node.name ? ' <small>' + esc(node.full_name) + "</small>" : "") + "</span><small>" + (n ? a + "/" + n + " alive" : "") + "</small></h4>";
+      const list = (at.get(node) || []).sort((x, y) => (x.kind !== "unit") - (y.kind !== "unit") || (groupAt(x, t) || "").localeCompare(groupAt(y, t) || "") || x.id - y.id);
+      for (const e of list) h += unitButton(e, sideAt(e, t));
+      const kids = [...(node.children || [])].sort((x, y) => (x.order ?? 0) - (y.order ?? 0));
+      if (kids.length) h += '<div class="indent">' + kids.map(c => draw(c, sd)).join("") + "</div>";
+      return h;
+    };
+    let html = "";
+    for (const team of rec.orbat.teams) {
+      const sd = team.side || "";
+      const [a, n] = count(team);
+      html += '<h3 class="s-' + esc(sd) + '">' + esc(team.side ? sideName(team.side) : team.faction || "Team") + "<span>" + a + "/" + n + " alive</span></h3>" + draw(team, sd);
+    }
+    if (loose.length) {
+      html += "<h3>Not in the ORBAT</h3>";
+      for (const e of loose.sort((x, y) => sideAt(x, t).localeCompare(sideAt(y, t)) || x.id - y.id)) html += unitButton(e, sideAt(e, t));
+    }
+    return html;
+  }
+  function renderRoster(force) {
+    if (!rec || $("pane-units").hidden) return;
+    const key = Math.floor(t) + "|" + selected + "|" + unitMode;
+    if (!force && key === rosterKey) return;
+    rosterKey = key;
+    $("roster").innerHTML = rec.orbat && unitMode === "orbat" ? renderOrbat() : renderGroups();
   }
 
   // ---------- selection card ----------
@@ -568,11 +839,16 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
     if (!force && key === cardKey) return;
     cardKey = key;
     const veh = s && s.veh ? rec.entities.get(s.veh) : null;
+    const oid = orbatAt(e, t), node = oid !== undefined ? rec.nodes.get(oid) : null;
     const killsBy = rec.kills.filter(k => k.t <= t && (k.instigator || k.killer) === e.id).length;
     const shotsBy = rec.shotList.filter(x => x.t0 <= t && (x.gunner || x.shooter) === e.id).length;
     card.innerHTML = '<h2 class="s-' + esc(sideAt(e, t)) + '">' + esc(nameAt(e, t)) + '</h2><div class="tag">' + esc(e.display) + " · " + esc(e.cls) + "</div><dl>" +
       "<dt>Status</dt><dd>" + (!s ? "not present" : s.alive ? "alive, " + Math.round(s.dmg * 100) + "% damage" : "dead") + "</dd>" +
       (e.kind === "unit" ? "<dt>Group</dt><dd>" + esc(groupAt(e, t) || "–") + "</dd>" : "") +
+      (e.role_name || e.role ? "<dt>Role</dt><dd>" + esc(e.role_name || e.role) + (e.loadout_faction ? " · " + esc(e.loadout_faction) : "") + "</dd>" : "") +
+      (node ? "<dt>ORBAT</dt><dd>" + node.path.map(n => esc(n.name)).join(" › ") + "</dd>" : "") +
+      (e.callsign ? "<dt>Callsign</dt><dd>" + esc(e.callsign) + "</dd>" : "") +
+      (uidAt(e, t) ? "<dt>UID</dt><dd>" + esc(uidAt(e, t)) + "</dd>" : "") +
       (veh ? "<dt>Vehicle</dt><dd>" + esc(veh.display) + "</dd>" : "") +
       (s ? "<dt>Grid</dt><dd>" + grid(s.x, s.y) + " · " + Math.round(s.dir) + "°</dd>" : "") +
       "<dt>Shots</dt><dd>" + shotsBy + "</dd><dt>Kills</dt><dd>" + killsBy + "</dd></dl>" +
@@ -582,6 +858,179 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
     $("deselect").onclick = () => select(0);
   }
   function select(id) { selected = id; if (!id) follow = false; renderCard(true); renderRoster(true); }
+
+  // ---------- mission tab ----------
+  const pad2 = n => String(n).padStart(2, "0");
+  const HEADER_KEYS = new Set(["type", "t", "version", "mission", "world", "started_utc", "interval", "keyframe_interval", "multiplayer", "briefing_name", "on_load_name",
+    "author", "overview", "game_type", "max_players", "server_name", "world_name", "world_size", "date", "time_multiplier", "weather", "game_version", "mods"]);
+  function playerStats() {
+    const stats = new Map();
+    const of = (id, time) => { const e = id && rec.entities.get(id); const u = e && uidAt(e, time); if (!u) return null; if (!stats.has(u)) stats.set(u, { name: nameAt(e, time), side: sideAt(e, time), k: 0, d: 0, shots: 0, hits: 0 }); return stats.get(u); };
+    for (const e of rec.entities.values()) for (const p of e.players) if (p[1]) of(e.id, p[0]);
+    for (const k of rec.kills) { const a = of(k.instigator || k.killer, k.t); if (a && (k.instigator || k.killer) !== k.victim) a.k++; const v = of(k.victim, k.t); if (v) v.d++; }
+    for (const x of rec.shotList) { if (x.parent) continue; const a = of(x.gunner || x.shooter, x.t0); if (a) a.shots++; }
+    const hits = rec.damage.length ? rec.damage.map(h => [h.unit, h.t]) : rec.hits.filter(h => h.type === "proj_hit").map(h => [h.target, h.t]);
+    for (const [id, time] of hits) { const v = of(id, time); if (v) v.hits++; }
+    return [...stats.values()].sort((a, b) => a.side.localeCompare(b.side) || b.k - a.k || a.name.localeCompare(b.name));
+  }
+  function renderMission() {
+    const h = rec.header;
+    const row = (k, v, num) => v === undefined || v === null || v === "" ? "" : "<dt>" + k + "</dt><dd" + (num ? ' class="num"' : "") + ">" + v + "</dd>";
+    const pct = x => Math.round(+x * 100) + "%";
+    const title = h.briefing_name || h.on_load_name || h.mission || "Unknown mission";
+    let html = '<div class="sec"><h3>Mission</h3><div style="font-family:var(--font-display);font-size:1.3rem;font-weight:600">' + esc(title) + "</div>" +
+      (h.overview ? '<p class="overview">' + esc(h.overview) + "</p>" : "") + '<dl class="kv" style="margin-top:8px">' +
+      row("File name", esc(h.mission), true) +
+      row("Loading name", h.on_load_name && h.on_load_name !== title ? esc(h.on_load_name) : "") +
+      row("Author", esc(h.author)) +
+      row("Type", h.game_type || h.max_players ? esc(h.game_type || "–") + (h.max_players ? ", up to " + esc(h.max_players) + " players" : "") : "") +
+      row("Server", esc(h.server_name)) +
+      row("World", esc(h.world_name || h.world) + (h.world_name && h.world && h.world_name !== h.world ? ' <span class="tag">' + esc(h.world) + "</span>" : "") + (h.world_size ? ", " + (h.world_size / 1000).toFixed(1) + " km" : "")) +
+      row("Started", h.started_utc ? esc(String(h.started_utc).replace("T", " ").replace("Z", " UTC")) : "", true) +
+      row("In-game date", Array.isArray(h.date) && h.date.length >= 5 ? h.date[0] + "-" + pad2(h.date[1]) + "-" + pad2(h.date[2]) + " " + pad2(h.date[3]) + ":" + pad2(h.date[4]) : "", true) +
+      row("Time speed", h.time_multiplier !== undefined && +h.time_multiplier !== 1 ? esc(h.time_multiplier) + "×" : "", true) +
+      row("Weather", Array.isArray(h.weather) ? "overcast " + pct(h.weather[0]) + ", fog " + pct(h.weather[1]) + ", rain " + pct(h.weather[2]) : "") +
+      row("Arma version", Array.isArray(h.game_version) ? esc(h.game_version[0]) + " build " + esc(h.game_version[1]) : "", true) +
+      row("Multiplayer", h.multiplayer === undefined ? "" : h.multiplayer ? "yes" : "no") +
+      row("Snapshots", h.interval ? "every " + esc(h.interval) + " s, full every " + esc(h.keyframe_interval) + " s" : "") +
+      row("Length", fmt(rec.duration), true) +
+      row("Ended", rec.end ? esc(rec.end.reason) + " at " + fmt(rec.end.t) : "no end record, the file may have been cut short") +
+      row("Format", h.version !== undefined ? "version " + esc(h.version) : "", true) +
+      Object.entries(h).filter(([k]) => !HEADER_KEYS.has(k)).map(([k, v]) => row(esc(k), esc(typeof v === "object" ? JSON.stringify(v) : v), true)).join("") +
+      "</dl></div>";
+    if (Array.isArray(h.mods) && h.mods.length) html += '<div class="sec"><h3>Mods</h3><div class="chips">' + h.mods.map(m => "<span>" + esc(m) + "</span>").join("") + "</div></div>";
+
+    const sides = new Map();
+    const side = sd => { if (!sides.has(sd)) sides.set(sd, { units: 0, vehicles: 0, lost: 0, players: new Set() }); return sides.get(sd); };
+    for (const e of rec.entities.values()) { const x = side(e.side); if (e.kind === "unit") x.units++; else x.vehicles++; for (const p of e.players) if (p[1]) x.players.add(p[1]); }
+    for (const k of rec.kills) { const e = rec.entities.get(k.victim); if (e && e.kind === "unit") side(sideAt(e, k.t)).lost++; }
+    html += '<div class="sec"><h3>Sides</h3><table class="tbl"><tr><th>Side</th><th class="n">Units</th><th class="n">Vehicles</th><th class="n">Killed</th><th class="n">Players</th></tr>' +
+      [...sides].sort().map(([sd, x]) => '<tr><td class="s-' + esc(sd) + '">' + esc(sideName(sd)) + '</td><td class="n">' + x.units + '</td><td class="n">' + x.vehicles + '</td><td class="n">' + x.lost + '</td><td class="n">' + x.players.size + "</td></tr>").join("") + "</table></div>";
+
+    const ps = playerStats();
+    html += '<div class="sec"><h3>Players</h3>' + (ps.length ? '<table class="tbl"><tr><th>Name</th><th class="n" title="Kills">K</th><th class="n" title="Deaths">D</th><th class="n">Shots</th><th class="n" title="Times hit">Hit</th></tr>' +
+      ps.map(p => '<tr><td class="s-' + esc(p.side) + '">' + esc(p.name) + '</td><td class="n">' + p.k + '</td><td class="n">' + p.d + '</td><td class="n">' + p.shots + '</td><td class="n">' + p.hits + "</td></tr>").join("") + "</table>"
+      : '<div class="empty" style="padding:0">No players in this recording.</div>') + "</div>";
+    $("pane-mission").innerHTML = html;
+  }
+
+  // ---------- server tab ----------
+  const CHARTS = [
+    { title: "Server FPS", series: [["fps", "Average"], ["fps_min", "Slowest frame"]], spikes: true },
+    { title: "Units and entities", series: [["units", "Units"], ["entities", "Entities"]] },
+    { title: "Projectiles in flight", series: [["projectiles", "Projectiles"]] },
+    { title: "Recorder cost per snapshot (ms)", series: [["snap_ms", "Total"], ["snap_max_ms", "Worst frame"]] },
+  ];
+  let charts = [], chartHover = null;
+  const niceMax = v => { if (!(v > 0)) return 1; const p = Math.pow(10, Math.floor(Math.log10(v))); return [1, 2, 2.5, 5, 10].map(m => m * p).find(m => m >= v); };
+  function renderServer() {
+    const P = rec.perf;
+    charts = CHARTS.filter(c => P.some(p => typeof p[c.series[0][0]] === "number")).map(c => ({ ...c, base: null }));
+    if (!P.length && !rec.spikes.length) { $("pane-server").innerHTML = '<div class="empty">This recording has no server performance records.</div>'; return; }
+    const num = k => P.map(p => p[k]).filter(v => typeof v === "number");
+    const fps = num("fps"), fmin = num("fps_min"), units = num("units"), cost = num("snap_ms");
+    const avg = a => a.length ? a.reduce((x, y) => x + y, 0) / a.length : NaN;
+    const idle = rec.idle.reduce((x, [a, b]) => x + (b - a), 0);
+    const tile = (v, label) => "<div><b>" + v + "</b><small>" + label + "</small></div>";
+    let html = '<div class="sec"><div class="stats">' +
+      tile(fps.length ? avg(fps).toFixed(1) : "–", "average FPS") +
+      tile(fmin.length ? Math.min(...fmin).toFixed(1) : "–", "lowest FPS") +
+      tile(rec.spikes.length, "frame spikes") +
+      tile(units.length ? Math.max(...units) : "–", "most units") +
+      tile(cost.length ? avg(cost).toFixed(2) + " ms" : "–", "recorder per snapshot") +
+      tile(fmt(idle), "server empty") + "</div></div>";
+    charts.forEach((c, i) => {
+      html += '<div class="sec"><h3>' + esc(c.title) + '</h3><div class="chart">' +
+        (c.series.length > 1 ? '<div class="key">' + c.series.map((s, j) => "<span><i" + (j ? ' class="dash"' : "") + "></i>" + esc(s[1]) + "</span>").join("") + "</div>" : "") +
+        '<canvas id="chart' + i + '" data-i="' + i + '" aria-label="' + esc(c.title) + ' over the mission"></canvas><div class="tip" id="tip' + i + '" hidden></div></div></div>';
+    });
+    if (rec.spikes.length) {
+      html += '<div class="sec"><h3>Frame spikes</h3><table class="tbl"><tr><th>Time</th><th class="n">Frame</th><th class="n">Recorder</th><th class="n">FPS</th><th class="n">Units</th></tr>' +
+        rec.spikes.map(k => '<tr data-type="" data-t="' + k.t + '"><td class="n" style="text-align:left">' + fmt(k.t) + '</td><td class="n">' + Math.round(k.frame_ms) + ' ms</td><td class="n">' + (k.recorder_ms !== undefined ? (+k.recorder_ms).toFixed(1) + " ms" : "–") + '</td><td class="n">' + (k.fps ?? "–") + '</td><td class="n">' + (k.units ?? "–") + "</td></tr>").join("") + "</table></div>";
+    }
+    $("pane-server").innerHTML = html;
+    for (const c of charts) c.base = null;
+  }
+  function drawCharts() {
+    if (!rec || $("pane-server").hidden) return;
+    charts.forEach((c, i) => {
+      const cv = $("chart" + i); if (!cv) return;
+      const r = cv.getBoundingClientRect(), w = r.width, h = r.height;
+      if (!w) return;
+      if (cv.width !== Math.round(w * DPR)) { cv.width = Math.round(w * DPR); cv.height = Math.round(h * DPR); c.base = null; }
+      const ctx = cv.getContext("2d"); ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+      const L = 34, R = 6, T = 6, B = 16, pw = w - L - R, ph = h - T - B, D = rec.duration || 1;
+      const X = time => L + time / D * pw;
+      if (!c.base) {
+        ctx.clearRect(0, 0, w, h);
+        let mx = 0; for (const p of rec.perf) for (const [k] of c.series) if (typeof p[k] === "number") mx = Math.max(mx, p[k]);
+        c.max = niceMax(mx * 1.05);
+        const Y = v => T + ph - v / c.max * ph;
+        const font = getComputedStyle(document.body).getPropertyValue("--font-data");
+        ctx.font = "10px " + font; ctx.fillStyle = C["ink-soft"]; ctx.textAlign = "right"; ctx.textBaseline = "middle";
+        ctx.strokeStyle = C.rule; ctx.lineWidth = 1;
+        for (let j = 0; j <= 2; j++) { const v = c.max * j / 2, y = Math.round(Y(v)) + .5; ctx.beginPath(); ctx.moveTo(L, y); ctx.lineTo(w - R, y); ctx.stroke(); ctx.fillText(+v.toFixed(2), L - 5, y); }
+        ctx.textAlign = "left"; ctx.textBaseline = "bottom";
+        const step = [30, 60, 120, 300, 600, 1200, 1800, 3600].find(s => s / D * pw > 60) || 3600;
+        for (let s = step; s < D; s += step) ctx.fillText(fmt(s), X(s) + 2, h);
+        ctx.fillStyle = C["grid-major"];
+        for (const [a, b] of rec.idle) ctx.fillRect(X(a), T, Math.max(1, X(b) - X(a)), ph);
+        if (c.spikes) { ctx.fillStyle = C.accent; for (const k of rec.spikes) ctx.fillRect(X(k.t) - 1, T, 2, 8); }
+        c.series.forEach(([k], j) => {
+          ctx.strokeStyle = j ? C["ink-soft"] : C.ink; ctx.lineWidth = 2; ctx.lineJoin = "round"; ctx.setLineDash(j ? [4, 3] : []);
+          ctx.beginPath(); let prev = null;
+          for (const p of rec.perf) {
+            if (typeof p[k] !== "number") continue;
+            const gap = prev && p.t - prev.t > Math.max(3 * rec.interval, 5);
+            if (!prev || gap) ctx.moveTo(X(p.t), Y(p[k])); else ctx.lineTo(X(p.t), Y(p[k]));
+            prev = p;
+          }
+          ctx.stroke();
+        });
+        ctx.setLineDash([]);
+        c.base = ctx.getImageData(0, 0, cv.width, cv.height);
+      } else ctx.putImageData(c.base, 0, 0);
+      ctx.fillStyle = C.accent; ctx.fillRect(X(t) - 1, T, 2, ph);
+      const tip = $("tip" + i);
+      if (chartHover && chartHover.i === i && rec.perf.length) {
+        const time = Math.min(D, Math.max(0, (chartHover.x - L) / pw * D));
+        const j = Math.max(0, idx(rec.perfTimes, time)), p = rec.perf[j];
+        ctx.strokeStyle = C["ink-soft"]; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(Math.round(X(p.t)) + .5, T); ctx.lineTo(Math.round(X(p.t)) + .5, T + ph); ctx.stroke();
+        for (const [k] of c.series) if (typeof p[k] === "number") { ctx.fillStyle = C.ink; ctx.beginPath(); ctx.arc(X(p.t), T + ph - p[k] / c.max * ph, 4, 0, Math.PI * 2); ctx.fill(); ctx.strokeStyle = C.panel; ctx.lineWidth = 2; ctx.stroke(); }
+        tip.innerHTML = fmt(p.t) + " · " + c.series.filter(([k]) => typeof p[k] === "number").map(([k, n]) => esc(n) + " " + (+p[k].toFixed(2))).join(" · ");
+        tip.hidden = false;
+        const tx = X(p.t) + 10, tw = tip.offsetWidth;
+        tip.style.left = (tx + tw > w ? Math.max(0, X(p.t) - tw - 10) : tx) + "px"; tip.style.top = "0px";
+      } else tip.hidden = true;
+    });
+  }
+
+  // ---------- data tab ----------
+  let dataType = null, dataLimit = 100, dataQuery = "";
+  function renderData() {
+    const rows = [...rec.counts].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+    if (!dataType || !rec.counts.has(dataType)) dataType = rows.find(r => r[0] !== "snap")?.[0] || rows[0]?.[0];
+    $("pane-data").innerHTML = '<div class="sec"><h3>Record types</h3><table class="tbl" id="types"><tr><th>Type</th><th class="n">Records</th><th class="n">First</th><th class="n">Last</th></tr>' +
+      rows.map(([ty, n]) => { const list = rec.raw.get(ty); return '<tr data-type="' + esc(ty) + '" aria-selected="' + (ty === dataType) + '"><td>' + esc(ty) + '</td><td class="n">' + n + '</td><td class="n">' + fmt(list[0].t) + '</td><td class="n">' + fmt(list.at(-1).t) + "</td></tr>"; }).join("") +
+      "</table>" + (rec.bad ? '<p class="error">' + rec.bad + " line" + (rec.bad > 1 ? "s" : "") + " could not be read and were skipped.</p>" : "") +
+      '</div><div class="sec"><input class="search" id="dq" type="search" placeholder="Filter these records" value="' + esc(dataQuery) + '"></div><ol class="raw" id="rawlist"></ol>';
+    renderDataList();
+  }
+  function renderDataList() {
+    const list = rec.raw.get(dataType) || [], q = dataQuery.toLowerCase(), out = [];
+    let shown = 0, matched = 0;
+    for (const o of list) {
+      const j = JSON.stringify(o);
+      if (q && !j.toLowerCase().includes(q)) continue;
+      matched++;
+      if (shown >= dataLimit) continue;
+      shown++;
+      out.push('<li><time data-t="' + o.t + '">' + fmt(o.t) + "</time><code>" + esc(j.length > 600 ? j.slice(0, 600) + "… (" + j.length + " characters)" : j) + "</code></li>");
+    }
+    if (matched > shown) out.push('<li style="display:block"><button class="btn" id="more">Show more (' + (matched - shown) + " left)</button></li>");
+    if (!matched) out.push('<li class="empty" style="display:block">No records match.</li>');
+    $("rawlist").innerHTML = out.join("");
+  }
 
   // ---------- header ----------
   function renderMeta() {
@@ -593,7 +1042,7 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
       "<span><b>" + esc(h.mission || "Unknown mission") + "</b> on " + esc(h.world || "?") + "</span>" +
       (started && !isNaN(started) ? "<span>" + started.toISOString().slice(0, 16).replace("T", " ") + " UTC</span>" : "") +
       "<span>" + fmt(rec.duration) + "</span>" +
-      "<span>" + rec.entities.size + " entities" + (players.size ? ", " + players.size + " players" : "") + "</span>" +
+      "<span>" + rec.entities.size + " entities" + (players.size ? ", " + players.size + (players.size > 1 ? " players" : " player") : "") + "</span>" +
       "<span>" + rec.shots.size + " shots</span><span>" + rec.kills.length + " kills</span>";
     const sides = new Set([...rec.entities.values()].map(e => e.side));
     $("legend").innerHTML = [...sides].filter(s => ["WEST", "EAST", "GUER", "CIV"].includes(s)).sort().map(s =>
@@ -605,9 +1054,17 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
     try {
       const r = parse(text, label);
       r.eventTimes = r.events.map(e => [e.t]);
+      r.perfTimes = r.perf.map(p => [p.t]);
+      tiles.world = String(r.header.world || "").toLowerCase();
+      tiles.size = +r.header.world_size || WORLD_SIZES[tiles.world] || 0;
+      tileStats = { ok: 0, failed: 0 };
+      if (!$("layers").hidden) syncTilesForm();
       rec = r; t = 0; selected = 0; follow = false; playing = false; setPlayIcon();
       $("error").hidden = true;
+      unitMode = r.orbat ? "orbat" : "groups"; $("unitmode").hidden = !r.orbat; setUnitMode(unitMode);
+      dataType = null; dataLimit = 100; dataQuery = "";
       renderMeta(); resize(); readColors(); fit(); feedKey = ""; renderFeed(true); renderRoster(true); renderCard(true);
+      renderMission(); renderServer(); renderData(); drawCharts();
       tlDirty = true;
     } catch (err) {
       $("error").textContent = err.message; $("error").hidden = false;
@@ -626,12 +1083,29 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
   $("filters").onchange = e => { filters[e.target.id.slice(2)] = e.target.checked; renderFeed(true); };
   $("feed").onclick = e => { const li = e.target.closest("li[data-t]"); if (li) { t = +li.dataset.t; } };
   $("pane-units").onclick = e => { const b = e.target.closest("button[data-id]"); if (!b) return; const id = +b.dataset.id; select(id === selected ? 0 : id); const en = rec.entities.get(id), s = en && stateAt(en, t); if (s && id) { view.cx = s.x; view.cy = s.y; } };
-  for (const [tab, pane] of [["tab-events", "pane-events"], ["tab-units", "pane-units"]]) {
-    $(tab).onclick = () => {
-      for (const [a, b] of [["tab-events", "pane-events"], ["tab-units", "pane-units"]]) { $(a).setAttribute("aria-selected", a === tab); $(b).hidden = b !== pane; }
-      renderRoster(true);
+  const TABS = ["events", "units", "mission", "server", "data"];
+  for (const name of TABS) {
+    $("tab-" + name).onclick = () => {
+      for (const x of TABS) { $("tab-" + x).setAttribute("aria-selected", x === name); $("pane-" + x).hidden = x !== name; }
+      renderRoster(true); drawCharts();
     };
   }
+  function setUnitMode(m) { unitMode = m; for (const b of $("unitmode").children) b.setAttribute("aria-pressed", b.dataset.m === m); renderRoster(true); }
+  $("unitmode").onclick = e => { const b = e.target.closest("button[data-m]"); if (b) setUnitMode(b.dataset.m); };
+  // Anything with a time in the Mission, Server and Data tabs seeks there when clicked.
+  for (const name of ["mission", "server", "data"]) $("pane-" + name).addEventListener("click", e => { const x = e.target.closest("[data-t]"); if (x && rec) t = Math.min(rec.duration, +x.dataset.t); });
+  $("pane-data").addEventListener("click", e => {
+    const tr = e.target.closest("tr[data-type]");
+    if (tr) { dataType = tr.dataset.type; dataLimit = 100; for (const r of $("types").querySelectorAll("tr[data-type]")) r.setAttribute("aria-selected", r === tr); renderDataList(); $("dq").scrollIntoView({ block: "start" }); }
+    if (e.target.id === "more") { dataLimit += 200; renderDataList(); }
+  });
+  $("pane-data").addEventListener("input", e => { if (e.target.id === "dq") { dataQuery = e.target.value; dataLimit = 100; renderDataList(); } });
+  $("pane-server").addEventListener("pointermove", e => { const cv = e.target.closest("canvas[data-i]"); chartHover = cv ? { i: +cv.dataset.i, x: e.offsetX } : null; });
+  $("pane-server").addEventListener("pointerleave", () => chartHover = null);
+  $("pane-server").addEventListener("click", e => {
+    const cv = e.target.closest("canvas[data-i]"); if (!cv || !rec) return;
+    const w = cv.getBoundingClientRect().width; t = Math.min(rec.duration, Math.max(0, (e.offsetX - 34) / (w - 40) * rec.duration));
+  });
   $("zin").onclick = () => zoomAt(1.5); $("zout").onclick = () => zoomAt(1 / 1.5); $("zfit").onclick = () => rec && fit();
   $("open").onclick = () => $("file").click();
   $("file").onchange = e => { const f = e.target.files[0]; if (f) f.text().then(x => load(x, "")); e.target.value = ""; };
@@ -689,18 +1163,19 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
   });
 
   // theme changes
-  const themeChanged = () => { readColors(); tlDirty = true; };
+  const themeChanged = () => { readColors(); tlDirty = true; for (const c of charts) c.base = null; };
   matchMedia("(prefers-color-scheme: dark)").addEventListener("change", themeChanged);
   new MutationObserver(themeChanged).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
   new ResizeObserver(() => resize()).observe($("board"));
   new ResizeObserver(() => resize()).observe(tl);
+  new ResizeObserver(() => { for (const c of charts) c.base = null; }).observe($("pane-server"));
 
   // main loop
   let last = performance.now();
   function frame(now) {
     const dt = Math.min(0.1, (now - last) / 1000); last = now;
     if (rec && playing) { t += dt * speed; if (t >= rec.duration) { t = rec.duration; playing = false; setPlayIcon(); } }
-    drawMap(); drawTimeline();
+    drawMap(); drawTimeline(); drawCharts();
     if (rec) {
       $("clock").innerHTML = fmt(t) + " <span>/ " + fmt(rec.duration) + "</span>";
       renderFeed(); renderRoster(); renderCard();
@@ -710,7 +1185,13 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
 
   readColors(); resize();
   const sample = document.getElementById("sample");
-  if (sample) load(sample.textContent, sample.dataset.label || "Example recording");
+  // ?src=<url> opens a recording from a web address (the server must allow cross-origin requests).
+  const src = new URLSearchParams(location.search).get("src");
+  if (src) {
+    $("meta").innerHTML = "<span>Loading " + esc(src) + "…</span>";
+    fetch(src).then(r => { if (!r.ok) throw new Error("HTTP " + r.status); return r.text(); })
+      .then(x => load(x, ""), err => { $("meta").innerHTML = ""; $("error").textContent = "Could not load " + src + ": " + err.message; $("error").hidden = false; });
+  } else if (sample) load(sample.textContent, sample.dataset.label || "Example recording");
   else $("meta").innerHTML = "<span>Open a <b>.jsonl</b> recording from the <b>aar</b> folder, or drop it on the page.</span>";
   requestAnimationFrame(frame);
 })();

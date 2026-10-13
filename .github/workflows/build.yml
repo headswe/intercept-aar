@@ -6,46 +6,58 @@ on:
   workflow_dispatch:
 
 jobs:
+  linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check SQF and config with HEMTT
+        run: |
+          curl -sSL -o /tmp/hemtt.zip https://github.com/BrettMayson/HEMTT/releases/download/v1.22.0/linux-x64.zip
+          unzip -q /tmp/hemtt.zip -d /tmp/hemtt && chmod +x /tmp/hemtt/hemtt
+          /tmp/hemtt/hemtt check
+      - name: Build and test
+        run: |
+          cmake -S . -B out -DCMAKE_BUILD_TYPE=Release -DAAR_TESTS=ON
+          cmake --build out
+          ./out/aar_tests
+      - name: Viewer page is up to date
+        run: |
+          python3 viewer/build.py
+          git diff --exit-code viewer/aar-viewer.html
+      - uses: actions/upload-artifact@v4
+        with:
+          name: arma_aar_x64.so
+          path: build/Release/arma_aar_x64.so
+
   windows:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          submodules: recursive
-      - name: Configure
-        run: cmake -S . -B out -A x64
       - name: Build
-        run: cmake --build out --config Release
-      - name: Package mod
-        run: python tools/pack_mod.py build/win64/Release/intercept_aar_x64.dll out/mod
+        run: |
+          cmake -S . -B out -A x64
+          cmake --build out --config Release
       - uses: actions/upload-artifact@v4
         with:
-          name: intercept_aar_x64
-          path: build/win64/Release/intercept_aar_x64.dll
-      - uses: actions/upload-artifact@v4
-        with:
-          name: "@intercept_aar"
-          path: out/mod
+          name: arma_aar_x64.dll
+          path: build/Release/arma_aar_x64.dll
 
-  # The Intercept host DLL from the same Intercept commit as our submodule. Older @intercept
-  # releases crash on current Arma 3 builds, so this one replaces intercept_x64.dll in @intercept.
-  intercept-host:
-    runs-on: windows-latest
+  package:
+    needs: [linux, windows]
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
         with:
-          submodules: recursive
-      - name: Configure
-        run: cmake -S intercept -B out-host -A x64
-      - name: Build
-        run: cmake --build out-host --config Release --target intercept_x64
-      - name: Locate DLL
-        shell: pwsh
-        run: Get-ChildItem -Recurse -Filter intercept_x64.dll intercept/build, out-host -ErrorAction SilentlyContinue | Select-Object FullName
+          path: bin
+          merge-multiple: true
+      - name: Package mod
+        run: python3 tools/pack_mod.py out bin/arma_aar_x64.dll bin/arma_aar_x64.so
       - uses: actions/upload-artifact@v4
         with:
-          name: intercept_x64 (host)
-          path: |
-            intercept/build/win64/**/intercept_x64.dll
-            out-host/**/Release/intercept_x64.dll
-          if-no-files-found: error
+          name: "@arma_aar"
+          path: out
+      - uses: actions/upload-artifact@v4
+        with:
+          name: aar-viewer
+          path: viewer/aar-viewer.html

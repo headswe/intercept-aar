@@ -1,0 +1,42 @@
+name: pages
+
+# Publishes the viewer to GitHub Pages: index.html opens a recording you pick,
+# sample.html opens with a made-up recording loaded.
+on:
+  push:
+    branches: [main]
+    paths: ["viewer/**", ".github/workflows/pages.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build site
+        run: |
+          mkdir -p site
+          python3 viewer/build.py
+          cp viewer/aar-viewer.html site/index.html
+          python3 viewer/sample.py site/sample.jsonl
+          python3 viewer/build.py site/sample.jsonl "Sample recording (made up)"
+          cp viewer/aar-viewer.html site/sample.html
+          git checkout viewer/aar-viewer.html
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+      - id: deployment
+        uses: actions/deploy-pages@v4

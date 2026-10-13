@@ -2,7 +2,7 @@
  * postInit: opens the recording and adds the event handlers. Server only; in singleplayer
  * or a hosted game the host records.
  *
- * Mission settings in description.ext (all optional; class InterceptAAR is read too):
+ * Mission settings in description.ext (all optional):
  *   class AAR { enabled = 1; interval = 1; keyframeInterval = 60; logProjectiles = 1; logHits = 1; logMarkers = 1;
  *               frameBudget = 2; spikeThreshold = 100; pauseWhenEmpty = 1; logAI = 1; };
  */
@@ -10,7 +10,6 @@ if (!isServer) exitWith {};
 aar_active = false;
 
 private _cfg = missionConfigFile >> "AAR";
-if (!isClass _cfg) then { _cfg = missionConfigFile >> "InterceptAAR" };
 private _setting = {
     params ["_key", "_default"];
     private _entry = _cfg >> _key;
@@ -66,7 +65,7 @@ aar_idle = false;
     "interval", aar_interval toFixed 2,
     "keyframe_interval", aar_keyframeInterval toFixed 2,
     "multiplayer", toJSON isMultiplayer,
-    // Mission metadata (this version only). Text from description.ext is localized when it is a $STR key.
+    // Mission metadata. Text from description.ext is localized when it is a $STR key.
     "briefing_name", toJSON briefingName,
     "on_load_name", toJSON (["onLoadName"] call _missionText),
     "author", toJSON (["author"] call _missionText),

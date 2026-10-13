@@ -1,13 +1,15 @@
 #!/usr/bin/env python3
-"""Assembles the ready-to-load @intercept_aar mod folder.
+"""Assembles the ready-to-load @arma_aar mod folder.
 
-Packs addons/main into an uncompressed PBO (Arma reads a plain-text config.cpp
-fine) and copies the plugin DLL next to it:
+Packs addons/main into an uncompressed PBO (Arma reads plain-text config.cpp
+and .sqf fine) and copies the extension binaries to the mod root, where
+callExtension looks for them:
 
-    @intercept_aar/addons/intercept_aar_main.pbo
-    @intercept_aar/intercept/intercept_aar_x64.dll
+    @arma_aar/addons/arma_aar_main.pbo
+    @arma_aar/arma_aar_x64.dll
+    @arma_aar/arma_aar_x64.so   (if given)
 
-Usage: pack_mod.py <dll> <output dir>
+Usage: pack_mod.py <output dir> <extension binary>...
 """
 import hashlib
 import shutil
@@ -36,19 +38,19 @@ def pack_pbo(src: Path, prefix: str, out: Path) -> None:
 
 
 def main() -> None:
-    if len(sys.argv) != 3:
+    if len(sys.argv) < 3:
         sys.exit(__doc__)
-    dll, out_dir = Path(sys.argv[1]), Path(sys.argv[2])
-    mod = out_dir / "@intercept_aar"
+    out_dir, binaries = Path(sys.argv[1]), [Path(p) for p in sys.argv[2:]]
+    mod = out_dir / "@arma_aar"
     if mod.exists():
         shutil.rmtree(mod)
     (mod / "addons").mkdir(parents=True)
-    (mod / "intercept").mkdir()
 
     src = ROOT / "addons" / "main"
     prefix = (src / "$PBOPREFIX$").read_text().strip()
-    pack_pbo(src, prefix, mod / "addons" / "intercept_aar_main.pbo")
-    shutil.copy2(dll, mod / "intercept" / dll.name)
+    pack_pbo(src, prefix, mod / "addons" / "arma_aar_main.pbo")
+    for binary in binaries:
+        shutil.copy2(binary, mod / binary.name)
     shutil.copy2(ROOT / "README.md", mod / "README.md")
     print(f"wrote {mod}")
 
