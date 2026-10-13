@@ -222,6 +222,7 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
 <div class="drop" id="drop" hidden>Drop the .jsonl recording</div>
 
 <!--SAMPLE-->
+<!--TERRAINS-->
 
 <script>
 (() => {
@@ -505,8 +506,10 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
   // At the terrain's native zoom (config maxZoom) one tile pixel is one metre (two with doubleSize), row 0 is
   // the north edge, and each zoom below halves the resolution. Zooms past native, up to dynamicMaxZoom, are
   // rendered on request. <base><slug>/config.json gives the size, zoom range and version, and <base>config.json
-  // maps worlds that borrow another terrain's tiles to that slug. Without CORS on the tile host those two reads
-  // fail, so the viewer falls back to the header's world size and the built-in alias table below.
+  // maps worlds that borrow another terrain's tiles to that slug. The tile host sends no CORS headers, so the
+  // published viewer carries copies of both (#terrains, fetched by the Pages build). For a world not in that copy
+  // it tries the live configs, which only work same-origin or once CORS is added, and then falls back to the
+  // header's world size and the built-in alias table below.
   // Missing tiles (sea, or slow deep zooms) fall back to the nearest parent tile. ?tiles=<base> overrides the host.
   const WORLD_SIZES = { altis: 30720, stratis: 8192, tanoa: 15360, malden: 12800, enoch: 12800, vr: 8192 };
   const TILE_ALIASES = { baranowwinter: "baranow", chernarus_summer: "chernarus", gm_weferlingen_winter: "gm_weferlingen_summer",
@@ -514,6 +517,8 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
   const tiles = { base: new URLSearchParams(location.search).get("tiles") || "https://mission-db.1tac.eu/tiles/",
     world: "", slug: "", width: 0, height: 0, ppm: 1, native: 0, minZoom: 0, maxZoom: 0, version: "", bg: "" };
   if (!tiles.base.endsWith("/")) tiles.base += "/";
+  let baked = null;
+  try { if (!new URLSearchParams(location.search).get("tiles")) baked = JSON.parse(document.getElementById("terrains")?.textContent || "null"); } catch {}
   // Highest zoom that actually loads, learnt as tiles load: a zoom where tiles keep failing while none
   // load caps the zoom one below it.
   let zoomStats = [], zoomCap = 99;
@@ -539,7 +544,13 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
     if (!world) return;
     const get = async u => { const res = await fetch(u); if (!res.ok) throw new Error(res.status); return res.json(); };
     let slug = TILE_ALIASES[world] || world;
-    try { const map = await get(tiles.base + "config.json"); slug = map[world] || world; } catch {}
+    if (baked) {
+      slug = (baked.aliases || {})[world] || slug;
+      const cfg = (baked.terrains || {})[slug];
+      if (cfg) { setTerrain(world, size, { ...cfg, name: slug }); return; }
+    } else {
+      try { const map = await get(tiles.base + "config.json"); slug = map[world] || world; } catch {}
+    }
     let cfg = null;
     try { cfg = { ...await get(tiles.base + encodeURIComponent(slug) + "/config.json"), name: slug }; } catch {}
     if (token === tileLoad) setTerrain(world, size, cfg);
