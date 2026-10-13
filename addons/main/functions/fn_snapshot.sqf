@@ -39,10 +39,7 @@ for "_i" from _index to _end - 1 do {
                     _entry set [2, _newGroup];
                     _entry set [3, _newSide];
                     private _fields = ["unit", toJSON _id, "group", toJSON _newGroup, "side", toJSON _newSide];
-                    if (aar_tmf) then {
-                        private _parent = (group _obj) getVariable ["TMF_OrbatParent", -1];
-                        if (_parent isNotEqualTo -1) then { _fields append ["orbat", toJSON _parent] };
-                    };
+                    if (aar_tmf) then { _fields append (_obj call aar_fnc_tmfGroupFields) };
                     ["group", _fields] call aar_fnc_rec;
                 };
                 if (aar_tmf) then {

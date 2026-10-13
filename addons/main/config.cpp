@@ -34,7 +34,19 @@ class CfgFunctions {
             class orbat {};
             class tmfFields {};
             class tmfLoadout {};
+            class tmfGroupFields {};
+            class radio {};
+            class radioClient { headerType = -1; };  // sent to clients as code, so no function header
+            class radioNets {};
             class stop {};
         };
+    };
+};
+
+// Clients report radio transmissions to the server (aar_fnc_radio). Allowed here for servers that
+// whitelist remote execution; a mission with its own CfgRemoteExec in whitelist mode must list it too.
+class CfgRemoteExec {
+    class Functions {
+        class aar_fnc_radio { allowedTargets = 2; jip = 0; };
     };
 };

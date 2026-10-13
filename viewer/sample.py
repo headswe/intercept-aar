@@ -4,7 +4,7 @@
 Usage: sample.py [out.jsonl]     (default: stdout)
 
 A TMF platoon (two squads and a car) attacks an AI-held village; a few players connect,
-take units, fire, get hit, drive, place markers and leave. Not real data.
+take units, fire, get hit, drive, place markers, talk on ACRE2 radios and leave. Not real data.
 """
 import json
 import math
@@ -45,6 +45,17 @@ rec(0, "orbat", source="tmf", teams=[
     {"side": "EAST", "id": 100, "name": "Garrison", "full_name": "Kore Garrison", "icon": "", "modifier": "", "order": 0, "children": []},
 ])
 
+# TMF ACRE2 radio network: the platoon net on the 152s, one 343 channel per squad.
+rec(0, "radio_nets", source="tmf", nets=[
+    {"index": 0, "sides": ["WEST"], "factions": [], "channels": [
+        {"name": "PLTNET", "description": "Platoon net", "radio": "ACRE_PRC152", "shared": False, "number": 1, "freq": 60.15},
+        {"name": "ALPHA", "description": "Alpha squad", "radio": "ACRE_PRC343", "shared": False, "number": 1, "freq": 2400.13},
+        {"name": "BRAVO", "description": "Bravo squad", "radio": "ACRE_PRC343", "shared": False, "number": 2, "freq": 2400.23},
+        {"name": "FIRES", "description": "Fire support", "radio": "ACRE_PRC152", "shared": True, "number": 2, "freq": 61.15}]},
+])
+SHORT = {"PLT HQ": "HQ", "Alpha 1": "A1", "Alpha 2": "A2", "Bravo": "B"}
+CHANNELS = {"PLT HQ": [0, 3], "Alpha 1": [1], "Alpha 2": [1], "Bravo": [2]}
+
 # --- entities -------------------------------------------------------------------------------
 units = {}   # id -> dict(x, y, dir, alive, dmg, veh, side)
 nid = 1
@@ -60,6 +71,7 @@ for gi, (gname, node, n) in enumerate(west_groups):
         units[nid] = dict(x=x, y=y, dir=45, alive=True, dmg=0.0, veh=0, side="WEST", group=gname)
         rec(1, "entity", id=nid, kind="unit", **{"class": "B_Soldier_F"}, display="Rifleman", side="WEST",
             name=name if not uid else "AI " + str(nid), group=gname, player=False, uid="", orbat=node,
+            group_short=SHORT[gname], radio_net=0, radio_channels=CHANNELS[gname] + ([0] if k == 0 else []),
             loadout_faction="blu_f", role=role[0], role_name=role[1])
         nid += 1
 car = nid; nid += 1
@@ -114,6 +126,30 @@ ev(124, "enemy_detected", group="Garrison 2", side="EAST", leader=east[5], targe
 ev(124.3, "combat_mode", group="Garrison 2", side="EAST", leader=east[5], mode="COMBAT")
 ev(260, "fleeing", group="Garrison 2", side="EAST", leader=east[5], fleeing=True)
 ev(290, "fleeing", group="Garrison 2", side="EAST", leader=east[5], fleeing=False)
+# Radios: what each player carries, a retune, and transmissions (ACRE2 reports start and end).
+def radio(rid, cls, name, ch, freq, label):
+    return {"radio_id": rid, "radio": cls, "radio_name": name, "channel": ch, "freq": freq, "channel_name": label}
+kit = {
+    1: [radio("acre_prc152_id_1", "ACRE_PRC152", "AN/PRC-152", 1, 60.15, "01 - PLTNET"), radio("acre_prc343_id_1", "ACRE_PRC343", "AN/PRC-343", 1, 2400.13, "Block 1 - Channel 01")],
+    2: [radio("acre_prc117f_id_1", "ACRE_PRC117F", "AN/PRC-117F", 1, 60.15, "PLTNET"), radio("acre_prc152_id_2", "ACRE_PRC152", "AN/PRC-152", 2, 61.15, "02 - FIRES")],
+    6: [radio("acre_prc152_id_3", "ACRE_PRC152", "AN/PRC-152", 1, 60.15, "01 - PLTNET"), radio("acre_prc343_id_2", "ACRE_PRC343", "AN/PRC-343", 2, 2400.23, "Block 1 - Channel 02")],
+}
+for pid, radios in kit.items():
+    ev(8 + pid, "radios", unit=pid, system="acre", radios=radios)
+# Alex retunes the 343 to Alpha's channel when Bravo joins the assault.
+ev(112, "radios", unit=6, system="acre", radios=[kit[6][0], radio("acre_prc343_id_2", "ACRE_PRC343", "AN/PRC-343", 1, 2400.13, "Block 1 - Channel 01")])
+tx_t = 25.0
+while tx_t < 380:
+    pid = rnd.choice([1, 1, 2, 6])
+    r = rnd.choice(kit[pid])
+    if pid == 6 and r["radio"] == "ACRE_PRC343" and tx_t > 112:
+        r = dict(r, channel=1, freq=2400.13, channel_name="Block 1 - Channel 01")
+    if units[pid]["alive"]:
+        length = round(rnd.uniform(1.2, 7.5), 2)
+        f = {k: r[k] for k in ("radio_id", "radio", "radio_name", "channel", "freq", "channel_name")}
+        ev(tx_t, "radio_tx", unit=pid, system="acre", **f)
+        ev(tx_t + length, "radio_tx_end", unit=pid, system="acre", radio_id=r["radio_id"])
+    tx_t += rnd.uniform(4, 18) if 110 < tx_t < 300 else rnd.uniform(15, 40)
 ev(395, "disconnected", uid=players[2][0], name=players[2][1], jip=False, owner=4)
 ev(395.2, "player", unit=2, uid="", name="")
 

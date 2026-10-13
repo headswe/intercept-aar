@@ -32,6 +32,12 @@ if (aar_pauseWhenEmpty && isDedicated) then {
     };
 };
 
+// TMF builds its ACRE presets a few frames into the mission; the frequencies come from them.
+if (aar_radioNetsPending && {!isNil "tmf_acre2_networksCreated" || time > 30}) then {
+    aar_radioNetsPending = false;
+    call aar_fnc_radioNets;
+};
+
 private _t = time;
 private _working = aar_snap isNotEqualTo [];
 if (!_working && {!aar_idle} && {_t - aar_lastSnapshot >= aar_interval}) then {

@@ -1,5 +1,6 @@
 /*
- * TMF fields for an entity record: where it sits in the ORBAT and, for units, the TMF loadout.
+ * TMF fields for an entity record: where it sits in the ORBAT and, for units, their group's
+ * short name, radio network and the TMF loadout.
  *
  * Arguments: 0: object <OBJECT>, 1: kind <STRING>
  * Returns: [key, json, ...] <ARRAY>
@@ -7,9 +8,7 @@
 params ["_obj", "_kind"];
 private _fields = [];
 if (_kind isEqualTo "unit") then {
-    // Units sit under their group's node; TMF falls back to the team's root node when it is unset.
-    private _parent = (group _obj) getVariable ["TMF_OrbatParent", -1];
-    if (_parent isNotEqualTo -1) then { _fields append ["orbat", toJSON _parent] };
+    _fields append (_obj call aar_fnc_tmfGroupFields);
     _fields append (_obj call aar_fnc_tmfLoadout);
 } else {
     private _parent = _obj getVariable ["TMF_OrbatParent", -1];

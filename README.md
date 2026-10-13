@@ -1,6 +1,6 @@
 # Arma AAR Recorder
 
-Records an Arma 3 mission for After Action Review. An SQF addon collects unit and vehicle snapshots, kills, hits, every projectile from muzzle to impact, vehicle get in/out, player connects and markers, and hands the records in one batch per frame to a small extension (`arma_aar_x64.dll` / `.so`) that writes them to a `.jsonl` file on a background thread.
+Records an Arma 3 mission for After Action Review. An SQF addon collects unit and vehicle snapshots, kills, hits, every projectile from muzzle to impact, vehicle get in/out, player connects, markers and ACRE2 / TFAR radio traffic, and hands the records in one batch per frame to a small extension (`arma_aar_x64.dll` / `.so`) that writes them to a `.jsonl` file on a background thread.
 
 Open a recording in the [viewer](#viewing-a-recording) to play it back on a map and read everything in it.
 
@@ -45,7 +45,7 @@ Every line is a JSON object with `type` and `t` (mission time in seconds, from `
 | type | fields |
 |---|---|
 | `header` | `version`, `mission`, `world`, `started_utc`, `interval`, `keyframe_interval`, `multiplayer`. Mission metadata: `briefing_name`, `on_load_name`, `author`, `overview` (from description.ext), `game_type`, `max_players` (from its `Header` class), `server_name`, `world_name` (display name), `world_size` (m), `date` (in-game start `[year, month, day, hour, minute]`), `time_multiplier`, `weather` (`[overcast, fog, rain]` at start), `game_version` (`[version, build]`), `mods` (loaded non-official mod folders) |
-| `entity` | first sighting of an entity: `id`, `kind` (`unit`, `car`, `tank`, `heli`, `plane`, `ship`, `static`, `vehicle`, `air`), `class`, `display`, `side`; units also have `name`, `group`, `player`, `uid`. With TMF: `orbat`, plus `loadout_faction`, `role`, `role_name` on units and `callsign`, `orbat_team` on vehicles (see "TMF" below) |
+| `entity` | first sighting of an entity: `id`, `kind` (`unit`, `car`, `tank`, `heli`, `plane`, `ship`, `static`, `vehicle`, `air`), `class`, `display`, `side`; units also have `name`, `group`, `player`, `uid`. With TMF: `orbat`, plus `group_short`, `loadout_faction`, `role`, `role_name` (and `radio_net`, `radio_channels` with TMF radio networks) on units and `callsign`, `orbat_team` on vehicles (see "TMF" below) |
 | `snap` | `key` (true for a full keyframe), `e`: array of `[id, x, y, z, dir, alive, damage, vehicle_id]` |
 | `killed` | `victim`, `killer`, `instigator`, `pos` |
 | `hit` | `unit`, `source`, `instigator`, `damage` Every recorded unit and vehicle, players included: see "Hits on players" below |
@@ -56,8 +56,12 @@ Every line is a JSON object with `type` and `t` (mission time in seconds, from `
 | `proj_end` | projectile removed: `id`, `pos` (impact or end point), `exploded` |
 | `get_in` / `get_out` | `vehicle`, `unit`, `role` (`driver`, `gunner`, `cargo`); `get_out` has `eject: true` for ejections |
 | `seat` | `vehicle`, `unit`, `role`: a unit moved to another seat inside the vehicle |
-| `group` | `unit`, `group`, `side` when a unit changes group or side; with TMF also `orbat` |
+| `group` | `unit`, `group`, `side` when a unit changes group or side; with TMF also `orbat`, `group_short`, `radio_net`, `radio_channels` |
 | `orbat` | TMF only, written once after the header: `source` (`tmf`), `teams`: one tree per side or faction, see "TMF" below |
+| `radio_tx` | a player started transmitting (see "Radio" below): `unit`, `system` (`acre`, `tfar`), `radio_id`, `radio` (class), `radio_name`, `channel` (1-based), `freq` (MHz), optional `channel_name` (ACRE's channel label), `lr` (TFAR long range), `additional` (TFAR additional channel) |
+| `radio_tx_end` | the transmission ended: `unit`, `system`, `radio_id` |
+| `radios` | the radios a player carries, when that or a channel changes: `unit`, `system`, `radios` (list of `{radio_id, radio, radio_name, channel, freq, channel_name}`) |
+| `radio_nets` | TMF only, once near the start: `source` (`tmf`), `nets`, see "Radio" below |
 | `loadout` | TMF only: `unit`, `loadout_faction`, `role`, `role_name` when TMF gives a unit its gear after it was first recorded |
 | `player` | `unit`, `uid`, `name` when a player takes or leaves a unit (empty `uid` = now AI) |
 | `respawn` | `new`, `old` |
@@ -96,6 +100,7 @@ Open the viewer on GitHub Pages (https://headswe.github.io/intercept-aar/, publi
 - **Map background:** MissionDB's R3-format tiles from `https://mission-db.1tac.eu/tiles/<slug>/tiles/{z}/{x}/{y}.png`, where the slug is the world name in lower case. The viewer first reads `tiles/config.json` (worlds that borrow another terrain's tiles) and `tiles/<slug>/config.json` (size, zoom range, background colour and `version`, which it adds to tile URLs as `?v=` so a re-tiled terrain is not served from cache). The layout follows Leaflet RasterCoords: one pixel per metre at the config's `maxZoom`, row 0 at the north edge, and zooms past it up to `dynamicMaxZoom` rendered on request. The tile host sends no CORS headers yet, so from another site those two reads fail; the viewer then uses `world_size` from the header (or a built-in size), computes the same native zoom, and uses a built-in copy of the alias list, which loses only the version and background colour. Missing tiles fall back to a lower zoom. `?tiles=<base url>` points the viewer at another tile host.
 - **Timeline:** shots per second as bars, kills as red ticks, server AI behaviour changes as small dark ticks, frame spikes as amber ticks and idle periods shaded. Click or drag to seek. Space plays and pauses, the arrow keys skip 5 s (30 s with Shift), and `[` / `]` change speed.
 - **Events:** every event up to the current time, filterable by kind (kills, hits, vehicles, players, markers, AI, world, shots). Click one to jump to it.
+- **Radio:** transmissions on the map as waves around the speaker with the channel name, a teal bar per transmission on the timeline, and a Radio tab with TMF's networks and channels (frequency, how many transmissions, time on air, units assigned), other channels heard, who talked most, and every transmission (click one to jump to it). A transmission takes its name from the TMF channel on the same frequency, else ACRE's channel label, else the channel number. A unit's card lists its radios, its TMF network and channels, and what it is transmitting on.
 - **Units:** the TMF ORBAT tree when the recording has one, with each node's units and who is still alive; otherwise units by side and group.
 - **Mission:** everything in the header (mission, author, briefing, world, in-game date, weather, game version, mods), how the mission ended, and per-player stats.
 - **Server:** server FPS, minimum FPS, units, entities and projectiles in flight over the mission from the `perf` records, the recorder's own cost, and a list of frame spikes.
@@ -119,6 +124,7 @@ class AAR {
     spikeThreshold = 100;   // ms; server frames slower than this get a perf_spike record and an RPT line
     pauseWhenEmpty = 1;     // dedicated server: no snapshots while no players are connected
     logAI = 1;              // combat_mode / enemy_detected / fleeing for AI groups
+    logRadio = 1;           // radio_tx / radios / radio_nets with ACRE2 or TFAR
 };
 ```
 
@@ -149,6 +155,18 @@ When [TMF](https://github.com/TMF3/TMF) is loaded, the recording carries its ORB
 
 Without TMF none of these fields are written.
 
+## Radio
+
+With ACRE2 or TFAR on the server, the recorder logs radio traffic. Both mods only know a player is transmitting on that player's own machine (the voice goes through TeamSpeak), so the server sends every machine with a player a small piece of code (`fn_radioClient.sqf`, via `remoteExecCall` and queued for players who join later; clients still need nothing installed). It listens to ACRE2's `acre_startedSpeaking` / `acre_stoppedSpeaking` and TFAR's `TFAR_event_OnTangent`, and reports each start and end with the radio, channel and frequency, plus every 5 s the radios the player carries when that changed. The server writes them as `radio_tx`, `radio_tx_end` and `radios`, stamped with server time, and drops a report about a unit the sending machine does not own.
+
+- Only radio transmissions are logged, not direct speech or vehicle intercom.
+- The reports reach the server through `remoteExecCall` of `aar_fnc_radio`. The addon allows it in its `CfgRemoteExec`; a mission with its own `CfgRemoteExec` in whitelist mode needs `class aar_fnc_radio { allowedTargets = 2; };` under `Functions`.
+- A transmission whose end never arrives (the player disconnected mid-transmission) is shown for at most 30 s.
+
+**TMF radio networks.** When a mission uses TMF's ACRE2 network settings (`TMF_AcreNetworkEnabled`), the `radio_nets` record holds them: each net has `index`, `sides`, `factions` and `channels`, and a channel is `{"name", "description", "radio", "shared", "number", "freq"}`. `number` is its channel number on that radio, and `freq` is read from the ACRE preset TMF builds for the network (`tmf_preset<index>`), so a `radio_tx` can be matched to a TMF channel by frequency. Units carry `radio_net` (the index) and `radio_channels` (indexes into that net's channels that TMF puts the unit on, by the channel's conditions or the unit's, group's or leader's channel list).
+
+**Group short names.** With TMF, units carry `group_short`, the text on their group's TMF group marker (for example `A1` for the group `Alpha 1`). The viewer uses it on group markers.
+
 ## Hits on players
 
 A player's damage is decided on the player's own machine. The server's copy of the bullet usually agrees, but with lag it can hit or miss differently, so `proj_hit` on a player is the server's view of the shot. For the authoritative result the recorder uses `Hit` while an object is local to the server (AI) and switches to `MPHit` once it is not (players, headless client AI, vehicles they drive). `MPHit` is raised by the owner and broadcast, so `hit` reflects what the owner's machine applied. Its code runs on every machine, but it is one line that does nothing off the server, and clients need nothing installed. `killed` is always authoritative. MPHit does not fire for the killing blow.
@@ -170,6 +188,7 @@ Before settling on this design we read OCAP2, R3 and Anrop's AAR addon. This one
 
 - `logProjectiles` writes two or three lines per round. Large firefights produce big files and cost some server FPS in SQF; turn it off if you only need movement and kills.
 - Bullet impacts on terrain and buildings are not logged as hits, only as the `proj_end` position.
+- Radio traffic needs the client code to arrive, so it starts a moment after a player loads in, and the server's time stamp is when the report arrived, not when the button was pressed.
 - Needs Arma 3 2.18 or newer (`toJSON`, `ProjectileCreated` and the projectile event handlers).
 - If a mission ends without `Ended` or `MPEnded` firing (for example leaving the editor preview), the file has no `end` line; the next mission closes it.
 - Not tested in-game yet.
