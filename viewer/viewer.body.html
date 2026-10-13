@@ -675,6 +675,10 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
   }
   // One marker per group with living members on the map: a NATO-style frame above the members' centre,
   // with the group's name, its AI behaviour and whether it is fleeing.
+  // Group markers merge up the hierarchy as you zoom out: when everything under a TMF ORBAT node fits
+  // within MERGE_PX on screen, the node gets one marker instead of one per group. Groups outside the
+  // ORBAT merge with nearby groups of the same side instead.
+  const MERGE_PX = 90;
   function drawGroups(ctx, states) {
     const groups = new Map();
     for (const [e, s] of states) {
@@ -682,47 +686,106 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
       const name = groupAt(e, t); if (!name) continue;
       const side = sideAt(e, t), k = groupKey(side, name);
       let g = groups.get(k);
-      if (!g) { g = { name, side, x: 0, y: 0, n: 0, player: false, vehicle: 0 }; groups.set(k, g); }
+      if (!g) { g = { key: k, name, side, x: 0, y: 0, n: 0, player: false, vehicle: 0, x0: Infinity, y0: Infinity, x1: -Infinity, y1: -Infinity, nodes: new Map() }; groups.set(k, g); }
       g.x += s.x; g.y += s.y; g.n++;
+      g.x0 = Math.min(g.x0, s.x); g.x1 = Math.max(g.x1, s.x); g.y0 = Math.min(g.y0, s.y); g.y1 = Math.max(g.y1, s.y);
       if (isPlayerAt(e, t)) g.player = true;
       if (s.veh) g.vehicle++;
+      const o = orbatAt(e, t);
+      if (o !== undefined && rec.nodes.has(o)) g.nodes.set(o, (g.nodes.get(o) || 0) + 1);
     }
+    const markers = [];
+    const status = keys => {
+      let combat = false, flee = false, mode = null;
+      for (const k of keys) {
+        const info = rec.groupInfo.get(k); if (!info) continue;
+        const m = lastOf(info.modes, t), f = lastOf(info.flee, t);
+        if (m) { mode = mode && mode !== m[1] ? "mixed" : m[1]; if (m[1] === "COMBAT") combat = true; }
+        if (f && f[1]) flee = true;
+      }
+      return { combat, flee, mode };
+    };
+    const merge = (list, name, side, echelon) => {
+      const m = { name, side, echelon, x: 0, y: 0, n: 0, player: false, vehicle: 0, x0: Infinity, y0: Infinity, x1: -Infinity, y1: -Infinity, keys: [] };
+      for (const g of list) {
+        m.x += g.x; m.y += g.y; m.n += g.n; m.vehicle += g.vehicle; m.player ||= g.player;
+        m.x0 = Math.min(m.x0, g.x0); m.x1 = Math.max(m.x1, g.x1); m.y0 = Math.min(m.y0, g.y0); m.y1 = Math.max(m.y1, g.y1);
+        m.keys.push(...(g.keys || [g.key]));
+      }
+      return m;
+    };
+    const span = m => Math.max(m.x1 - m.x0, m.y1 - m.y0) * view.scale;
+
+    // ORBAT: groups hang under the node most of their members belong to; groups without one hang
+    // under the root of their side's tree, as in TMF's briefing.
+    const under = new Map(), loose = [];
+    for (const g of groups.values()) {
+      let id = null, best = 0;
+      for (const [o, c] of g.nodes) if (c > best) { best = c; id = o; }
+      let node = id !== null ? rec.nodes.get(id).node : rec.orbat && rec.orbat.teams.find(tm => tm.side === g.side);
+      if (!node) { loose.push(g); continue; }
+      if (!under.has(node)) under.set(node, []); under.get(node).push(g);
+    }
+    if (rec.orbat) {
+      const all = node => [...(under.get(node) || []), ...(node.children || []).flatMap(all)];
+      const place = (node, side, depth) => {
+        const list = all(node); if (!list.length) return;
+        const m = merge(list, node.name || node.full_name || "ORBAT", side, depth);
+        if (list.length > 1 && span(m) < MERGE_PX) { markers.push(m); return; }
+        for (const g of under.get(node) || []) markers.push(merge([g], g.name, side, 0));
+        for (const c of node.children || []) place(c, side, depth + 1);
+      };
+      for (const team of rec.orbat.teams) place(team, team.side || "", 0);
+    }
+    // Groups outside the ORBAT: merge with any marker of the same side within MERGE_PX on screen.
+    const clusters = [];
+    for (const g of loose.sort((a, b) => b.n - a.n)) {
+      const [gx, gy] = toScreen(g.x / g.n, g.y / g.n);
+      const c = clusters.find(c => c.side === g.side && Math.hypot(c.sx - gx, c.sy - gy) < MERGE_PX * .6 && span(merge([...c.list, g], "", g.side, 0)) < MERGE_PX);
+      if (c) c.list.push(g); else clusters.push({ side: g.side, sx: gx, sy: gy, list: [g] });
+    }
+    for (const c of clusters) markers.push(merge(c.list, c.list[0].name + (c.list.length > 1 ? " +" + (c.list.length - 1) : ""), c.side, c.list.length > 1 ? 1 : 0));
+
     const font = getComputedStyle(document.body);
     const placed = [];
-    for (const [k, g] of [...groups].sort((a, b) => b[1].y - a[1].y)) {
-      const [cx, cy] = toScreen(g.x / g.n, g.y / g.n);
-      // Stack markers upwards when another group's marker already sits there.
-      // Stack markers upwards when another group's marker already sits there, at most three deep;
+    for (const m of markers.sort((a, b) => b.y / b.n - a.y / a.n)) {
+      const [cx, cy] = toScreen(m.x / m.n, m.y / m.n);
+      // Stack markers upwards when another marker already sits there, at most three deep;
       // past that the marker is drawn without its labels so a crowded area stays readable.
       let my = cy - 30, depth = 0;
       while (depth < 3 && placed.some(([px, py]) => Math.abs(px - cx) < 110 && Math.abs(py - my) < 26)) { my -= 26; depth++; }
       const crowded = placed.some(([px, py]) => Math.abs(px - cx) < 110 && Math.abs(py - my) < 26);
       if (crowded) my = cy - 30;
       placed.push([cx, my]);
-      const info = rec.groupInfo.get(k);
-      const mode = info && lastOf(info.modes, t), flee = info && lastOf(info.flee, t);
-      const col = sideColor(g.side);
-      const W2 = 13, H2 = 9, x = cx, y = my;
+      const st = status(m.keys);
+      const col = sideColor(m.side);
+      const big = m.keys.length > 1, W2 = big ? 16 : 13, H2 = big ? 11 : 9, x = cx, y = my;
       ctx.strokeStyle = C["ink-soft"]; ctx.lineWidth = 1; ctx.setLineDash([2, 2]);
       ctx.beginPath(); ctx.moveTo(cx, cy - 8); ctx.lineTo(x, y + H2); ctx.stroke(); ctx.setLineDash([]);
       ctx.fillStyle = C.panel; ctx.strokeStyle = col; ctx.lineWidth = 2;
       ctx.beginPath(); ctx.rect(x - W2, y - H2, W2 * 2, H2 * 2); ctx.fill(); ctx.stroke();
-      // Infantry cross, plus an oval when most of the group rides in vehicles.
+      // Infantry cross, plus an oval when most of the unit rides in vehicles.
       ctx.lineWidth = 1.5; ctx.beginPath();
       ctx.moveTo(x - W2, y - H2); ctx.lineTo(x + W2, y + H2); ctx.moveTo(x + W2, y - H2); ctx.lineTo(x - W2, y + H2); ctx.stroke();
-      if (g.vehicle * 2 > g.n) { ctx.beginPath(); ctx.ellipse(x, y, W2 - 4, H2 - 3, 0, 0, Math.PI * 2); ctx.stroke(); }
-      if (g.player) { ctx.strokeStyle = C.ink; ctx.lineWidth = 1; ctx.strokeRect(x - W2 - 3, y - H2 - 3, W2 * 2 + 6, H2 * 2 + 6); }
+      if (m.vehicle * 2 > m.n) { ctx.beginPath(); ctx.ellipse(x, y, W2 - 4, H2 - 3, 0, 0, Math.PI * 2); ctx.stroke(); }
+      // Merged markers carry a tick per group above the frame, like an echelon mark.
+      if (big) {
+        ctx.fillStyle = col; const k = Math.min(m.keys.length, 6);
+        for (let i = 0; i < k; i++) ctx.fillRect(x - (k - 1) * 3.5 + i * 7 - 1.5, y - H2 - 7, 3, 4);
+      }
+      if (m.player) { ctx.strokeStyle = C.ink; ctx.lineWidth = 1; ctx.strokeRect(x - W2 - 3, y - H2 - 3, W2 * 2 + 6, H2 * 2 + 6); }
       if (crowded) continue;
       ctx.textAlign = "left"; ctx.textBaseline = "middle";
       ctx.font = "600 12px " + font.getPropertyValue("--font-ui");
-      halo(ctx, g.name + " (" + g.n + ")", x + W2 + 6, y - 4, C.ink);
+      halo(ctx, m.name + " (" + m.n + ")", x + W2 + 6, y - 4, C.ink);
       const tags = [];
-      if (mode && mode[1] !== "AWARE") tags.push(MODE_SHORT[mode[1]] || mode[1]);   // AWARE is the AI default
-      if (flee && flee[1]) tags.push("FLEEING");
+      if (big && m.keys.length > 1) tags.push(m.keys.length + " groups");
+      if (st.mode && st.mode !== "AWARE" && st.mode !== "mixed") tags.push(MODE_SHORT[st.mode] || st.mode);   // AWARE is the AI default
+      else if (st.combat) tags.push("IN COMBAT");
+      if (st.flee) tags.push("FLEEING");
       if (tags.length) {
         ctx.font = "600 10px " + font.getPropertyValue("--font-data");
-        const danger = (flee && flee[1]) || (mode && mode[1] === "COMBAT");
-        halo(ctx, tags.join(" · "), x + W2 + 6, y + 9, danger ? C.east : C["ink-soft"]);
+        halo(ctx, tags.join(" · "), x + W2 + 6, y + 9, st.flee || st.combat ? C.east : C["ink-soft"]);
       }
     }
   }
