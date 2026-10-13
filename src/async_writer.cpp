@@ -14,11 +14,11 @@ bool async_writer::open(const std::string& path) {
     return true;
 }
 
-void async_writer::write(std::string line) {
-    if (!running_) return;
+void async_writer::write(std::string text) {
+    if (!running_ || text.empty()) return;
     {
         std::lock_guard<std::mutex> lock(mutex_);
-        pending_.emplace_back(std::move(line));
+        pending_.emplace_back(std::move(text));
     }
     cv_.notify_one();
 }
@@ -46,7 +46,7 @@ void async_writer::run() {
             batch.swap(pending_);
             stopping = stop_;
         }
-        for (const auto& line : batch) file_ << line;
+        for (const auto& text : batch) file_ << text;
         batch.clear();
         file_.flush();
         if (stopping) {

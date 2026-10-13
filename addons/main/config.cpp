@@ -1,10 +1,10 @@
 class CfgPatches {
-    class intercept_aar_main {
-        name = "Intercept AAR Recorder";
+    class arma_aar_main {
+        name = "Arma AAR Recorder";
         units[] = {};
         weapons[] = {};
-        requiredVersion = 2.0;
-        requiredAddons[] = {"intercept_core"};
+        requiredVersion = 2.18;
+        requiredAddons[] = {"A3_Functions_F"};
         author = "headswe";
         version = "0.1";
         versionStr = "0.1.0";
@@ -12,11 +12,29 @@ class CfgPatches {
     };
 };
 
-// Tells Intercept to load intercept/intercept_aar_x64.dll from this mod's folder.
-class Intercept {
-    class headswe {
-        class intercept_aar {
-            pluginName = "intercept_aar";
+class CfgFunctions {
+    class aar {
+        tag = "aar";
+        class main {
+            file = "\z\arma_aar\addons\main\functions";
+            class init { postInit = 1; };
+            class rec {};
+            class pos {};
+            class id {};
+            class knownId {};
+            class register {};
+            class snapshot {};
+            class projectile {};
+            class flush {};
+            class frame {};
+            class hit {};
+            class addMPHit {};
+            class registerGroup {};
+            class groupFields {};
+            class orbat {};
+            class tmfFields {};
+            class tmfLoadout {};
+            class stop {};
         };
     };
 };

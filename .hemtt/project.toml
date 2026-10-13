@@ -1,4 +1,11 @@
-name = "Intercept AAR"
+name = "Arma AAR"
 author = "headswe"
-prefix = "intercept_aar"
+prefix = "arma_aar"
 mainprefix = "z"
+
+[version]
+major = 0
+minor = 1
+patch = 0
+build = 0
+git_hash = 0

@@ -1,5 +1,5 @@
 #pragma once
-// Appends lines to a file from a background thread so disk IO never stalls
+// Appends text to a file from a background thread so disk IO never stalls
 // the game thread.
 
 #include <condition_variable>
@@ -19,7 +19,7 @@ public:
     async_writer& operator=(const async_writer&) = delete;
 
     bool open(const std::string& path);
-    void write(std::string line);
+    void write(std::string text);
     void close();
     bool is_open() const { return running_; }
 
