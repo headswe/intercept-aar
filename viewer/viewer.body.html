@@ -171,6 +171,7 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
     <div class="load">
       <span class="error" id="error" hidden></span>
       <input type="file" id="file" accept=".jsonl,.json,.txt" hidden>
+      <button class="btn" id="samplebtn" hidden>Sample data</button>
       <button class="btn primary" id="open">Open recording</button>
     </div>
   </header>
@@ -1278,6 +1279,7 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
       r.perfTimes = r.perf.map(p => [p.t]);
       const world = String(r.header.world || "").toLowerCase();
       loadTerrain(world, +r.header.world_size || WORLD_SIZES[world] || 0);
+      $("samplebtn").hidden = true;   // only offered while nothing is loaded; keeps the header on one line
       rec = r; t = 0; selected = 0; follow = false; playing = false; setPlayIcon();
       $("error").hidden = true;
       unitMode = r.orbat ? "orbat" : "groups"; $("unitmode").hidden = !r.orbat; setUnitMode(unitMode);
@@ -1411,7 +1413,17 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
     fetch(src).then(r => { if (!r.ok) throw new Error("HTTP " + r.status); return r.text(); })
       .then(x => load(x, ""), err => { $("meta").innerHTML = ""; $("error").textContent = "Could not load " + src + ": " + err.message; $("error").hidden = false; });
   } else if (sample) load(sample.textContent, sample.dataset.label || "Example recording");
-  else $("meta").innerHTML = "<span>Open a <b>.jsonl</b> recording from the <b>aar</b> folder, or drop it on the page.</span>";
+  else $("meta").innerHTML = "<span>Open a <b>.jsonl</b> recording from the <b>aar</b> folder, or drop it on the page" +
+    (location.protocol === "file:" ? "" : ", or try the <b>sample data</b>") + ".</span>";
+  // Made-up recording on Stratis: the embedded example if there is one, else sample.jsonl next to the page
+  // (the Pages build publishes it; a page opened from disk has none, so the button stays hidden there).
+  $("samplebtn").hidden = !!rec || (!sample && location.protocol === "file:");
+  $("samplebtn").onclick = () => {
+    if (sample) return load(sample.textContent, sample.dataset.label || "Example recording");
+    $("error").hidden = true;
+    fetch("sample.jsonl").then(r => { if (!r.ok) throw new Error("HTTP " + r.status); return r.text(); })
+      .then(x => load(x, "Sample recording (made up)"), err => { $("error").textContent = "Could not load the sample: " + err.message; $("error").hidden = false; });
+  };
   requestAnimationFrame(frame);
 })();
 </script>

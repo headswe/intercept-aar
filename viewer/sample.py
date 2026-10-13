@@ -22,15 +22,15 @@ def rec(t, type_, **f):
 DURATION = 420
 INTERVAL = 1
 KEY = 60
-X0, Y0 = 14200.0, 16400.0          # BLUFOR start, south-west of the village
-VX, VY = 14900.0, 16950.0          # village centre
+X0, Y0 = 3600.0, 5500.0            # BLUFOR start, in the hills south-east of the village
+VX, VY = 3000.0, 6000.0            # village centre (Agia Marina, Stratis)
 
-rec(0, "header", version=1, mission="co12_village_raid", world="Altis",
+rec(0, "header", version=1, mission="co12_village_raid", world="Stratis",
     started_utc="2026-10-13T19:00:00Z", interval=INTERVAL, keyframe_interval=KEY, multiplayer=True,
     briefing_name="CO12 Village Raid", on_load_name="Village Raid", author="Sample Author",
-    overview="Clear the village of Kore and hold it until the convoy arrives.",
-    game_type="Coop", max_players=12, server_name="Sample Server #1", world_name="Altis",
-    world_size=30720, date=[2035, 6, 12, 5, 40], time_multiplier=1, weather=[0.35, 0.05, 0],
+    overview="Clear Agia Marina and hold it until the convoy arrives.",
+    game_type="Coop", max_players=12, server_name="Sample Server #1", world_name="Stratis",
+    world_size=8192, date=[2035, 6, 12, 5, 40], time_multiplier=1, weather=[0.35, 0.05, 0],
     game_version=[2.22, 152948], mods=["TMF", "CBA_A3", "ACE"])
 
 rec(0, "orbat", source="tmf", teams=[
@@ -42,7 +42,7 @@ rec(0, "orbat", source="tmf", teams=[
              {"id": 5, "name": "A2", "full_name": "Alpha 2", "icon": "", "modifier": "", "order": 1, "children": []}]},
          {"id": 3, "name": "B", "full_name": "Bravo Squad", "icon": "", "modifier": "", "order": 2, "children": []},
          {"id": 6, "name": "Hunter 1", "full_name": "Hunter 1 (MRAP)", "icon": "", "modifier": "", "order": 3, "children": []}]},
-    {"side": "EAST", "id": 100, "name": "Garrison", "full_name": "Kore Garrison", "icon": "", "modifier": "", "order": 0, "children": []},
+    {"side": "EAST", "id": 100, "name": "Garrison", "full_name": "Agia Marina Garrison", "icon": "", "modifier": "", "order": 0, "children": []},
 ])
 
 # --- entities -------------------------------------------------------------------------------
@@ -96,7 +96,7 @@ for pid, (uid, name) in players.items():
     ev(jt + 0.5, "player", unit=pid, uid=uid, name=name)
     ev(jt + 3, "loadout", unit=pid, loadout_faction="blu_f", role=["pl", "rto", "", "", "", "sl"][pid - 1] or "r",
        role_name=["Platoon Leader", "Radio Operator", "", "", "", "Squad Leader"][pid - 1] or "Rifleman")
-ev(20, "marker_created", marker="_USER_DEFINED #2/0/1", channel=1, owner=1, text="OBJ KORE", markerType="mil_objective", color="ColorRed", pos=[VX, VY, 0])
+ev(20, "marker_created", marker="_USER_DEFINED #2/0/1", channel=1, owner=1, text="OBJ MARINA", markerType="mil_objective", color="ColorRed", pos=[VX, VY, 0])
 ev(22, "marker_created", marker="_USER_DEFINED #2/1/1", channel=3, owner=1, text="RP", markerType="mil_dot", color="ColorBLUFOR", pos=[X0 + 300, Y0 + 280, 0])
 ev(140, "marker_updated", marker="_USER_DEFINED #2/1/1", text="RP (moved)", pos=[X0 + 420, Y0 + 380, 0])
 ev(30, "get_in", vehicle=car, unit=6, role="driver")
