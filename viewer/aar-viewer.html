@@ -26,6 +26,7 @@
   --guer: #2a8a45;
   --civ: #7f44b5;
   --dead: #8a8d84;
+  --radio: #0b7f86;       /* radio transmissions */
   --font-display: "Barlow Condensed", "Arial Narrow", sans-serif;
   --font-ui: "IBM Plex Sans Condensed", "Arial Narrow", system-ui, sans-serif;
   --font-data: "IBM Plex Mono", ui-monospace, Menlo, Consolas, monospace;
@@ -34,14 +35,14 @@
   :root:not([data-theme="light"]) {
     --ground: #12161a; --panel: #191e23; --ink: #dfe4dc; --ink-soft: #8f998c; --rule: #2c343b;
     --grid: rgba(160, 190, 170, .07); --grid-major: rgba(160, 190, 170, .17);
-    --accent: #f0ad2e; --west: #5b95f0; --east: #ef6656; --guer: #4cc26c; --civ: #b07ce2; --dead: #6b726f;
+    --accent: #f0ad2e; --west: #5b95f0; --east: #ef6656; --guer: #4cc26c; --civ: #b07ce2; --dead: #6b726f; --radio: #3fc3c9;
     color-scheme: dark;
   }
 }
 :root[data-theme="dark"] {
   --ground: #12161a; --panel: #191e23; --ink: #dfe4dc; --ink-soft: #8f998c; --rule: #2c343b;
   --grid: rgba(160, 190, 170, .07); --grid-major: rgba(160, 190, 170, .17);
-  --accent: #f0ad2e; --west: #5b95f0; --east: #ef6656; --guer: #4cc26c; --civ: #b07ce2; --dead: #6b726f;
+  --accent: #f0ad2e; --west: #5b95f0; --east: #ef6656; --guer: #4cc26c; --civ: #b07ce2; --dead: #6b726f; --radio: #3fc3c9;
   color-scheme: dark;
 }
 html, body { height: 100%; }
@@ -200,6 +201,7 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
       <div class="tabs" role="tablist">
         <button role="tab" id="tab-events" aria-selected="true">Events</button>
         <button role="tab" id="tab-units" aria-selected="false">Units</button>
+        <button role="tab" id="tab-radio" aria-selected="false">Radio</button>
         <button role="tab" id="tab-mission" aria-selected="false">Mission</button>
         <button role="tab" id="tab-server" aria-selected="false">Server</button>
         <button role="tab" id="tab-data" aria-selected="false">Data</button>
@@ -212,6 +214,7 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
         <div class="seg" id="unitmode" hidden><button data-m="orbat" aria-pressed="true">ORBAT</button><button data-m="groups" aria-pressed="false">Groups</button></div>
         <div class="roster" id="roster"></div>
       </div>
+      <div class="pane" id="pane-radio" hidden></div>
       <div class="pane" id="pane-mission" hidden></div>
       <div class="pane" id="pane-server" hidden></div>
       <div class="pane" id="pane-data" hidden></div>
@@ -237,11 +240,11 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
   const SPEEDS = [1, 2, 4, 8, 16];
   const FILTERS = [
     ["kills", "Kills", true], ["hits", "Hits", true], ["vehicles", "Vehicles", true],
-    ["players", "Players", true], ["markers", "Markers", true], ["ai", "AI", true], ["world", "World", true],
+    ["players", "Players", true], ["radio", "Radio", true], ["markers", "Markers", true], ["ai", "AI", true], ["world", "World", true],
     ["shots", "Shots", false],
   ];
   // Record types the parser files somewhere other than the event feed.
-  const NOT_EVENTS = new Set(["header", "entity", "snap", "deleted", "submunition", "proj_end", "orbat", "perf"]);
+  const NOT_EVENTS = new Set(["header", "entity", "snap", "deleted", "submunition", "proj_end", "orbat", "perf", "radio_tx_end", "radio_nets"]);
 
   let rec = null;               // parsed recording
   let t = 0, playing = false, speed = 4;
@@ -250,7 +253,8 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
   const filters = Object.fromEntries(FILTERS.map(f => [f[0], f[2]]));
 
   const KNOWN = new Set(["end", "group", "player", "shot", "proj_hit", "proj_splash", "killed", "hit", "loadout", "perf_spike", "idle", "building",
-    "marker_created", "marker_updated", "marker_deleted", "get_in", "get_out", "seat", "respawn", "connected", "disconnected", "combat_mode", "enemy_detected", "fleeing"]);
+    "marker_created", "marker_updated", "marker_deleted", "get_in", "get_out", "seat", "respawn", "connected", "disconnected", "combat_mode", "enemy_detected", "fleeing",
+    "radio_tx", "radios"]);
 
   // AI group state from combat_mode / enemy_detected / fleeing, keyed by side and group name.
   const groupKey = (side, name) => side + "|" + name;
@@ -264,10 +268,13 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
   // ---------- parsing ----------
   function parse(text, label) {
     const r = { header: {}, end: null, entities: new Map(), shots: new Map(), hits: [], kills: [], events: [], duration: 0, label,
-      counts: new Map(), raw: new Map(), orbat: null, perf: [], spikes: [], idle: [], markers: new Map(), buildings: [], damage: [], groupInfo: new Map(), detections: [] };
+      counts: new Map(), raw: new Map(), orbat: null, perf: [], spikes: [], idle: [], markers: new Map(), buildings: [], damage: [], groupInfo: new Map(), detections: [],
+      tx: [], nets: null, groupShort: new Map() };
+    const openTx = new Map();   // "unit|radio id" -> transmission still going
+    const closeTx = (k, time) => { const x = openTx.get(k); if (x) { x.t1 = time; openTx.delete(k); } };
     const ent = id => {
       let e = r.entities.get(id);
-      if (!e) { e = { id, kind: "unit", name: "#" + id, side: "UNKNOWN", group: "", display: "", cls: "", player: false, states: [], groups: [], players: [], orbats: [], shots: 0, kills: 0, info: {} }; r.entities.set(id, e); }
+      if (!e) { e = { id, kind: "unit", name: "#" + id, side: "UNKNOWN", group: "", display: "", cls: "", player: false, states: [], groups: [], players: [], orbats: [], radios: [], shots: 0, kills: 0, info: {} }; r.entities.set(id, e); }
       return e;
     };
     let bad = 0;
@@ -289,7 +296,8 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
           const e = ent(o.id);
           Object.assign(e, { kind: o.kind, cls: o.class, display: o.display || o.class, side: o.side, name: o.name || o.display || o.class, group: o.group || "", player: !!o.player, uid: o.uid || "" });
           e.info = o;
-          for (const k of ["role", "role_name", "loadout_faction", "callsign", "orbat_team"]) if (o[k] !== undefined) e[k] = o[k];
+          for (const k of ["role", "role_name", "loadout_faction", "callsign", "orbat_team", "radio_net", "radio_channels"]) if (o[k] !== undefined) e[k] = o[k];
+          if (o.group_short && o.group) r.groupShort.set(groupKey(o.side, o.group), o.group_short);
           e.groups.push([o.t, o.group || "", o.side]);
           if (o.orbat !== undefined) e.orbats.push([o.t, o.orbat]);
           if (o.player) e.players.push([o.t, o.uid, o.name]);
@@ -298,7 +306,33 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
         case "snap":
           for (const s of o.e) ent(s[0]).states.push([o.t, s[1], s[2], s[3], s[4], s[5], s[6], s[7]]);
           break;
-        case "group": { const e = ent(o.unit); e.groups.push([o.t, o.group, o.side]); if (o.orbat !== undefined) e.orbats.push([o.t, o.orbat]); r.events.push(o); break; }
+        case "group": {
+          const e = ent(o.unit); e.groups.push([o.t, o.group, o.side]); if (o.orbat !== undefined) e.orbats.push([o.t, o.orbat]);
+          for (const k of ["radio_net", "radio_channels"]) if (o[k] !== undefined) e[k] = o[k];
+          if (o.group_short) r.groupShort.set(groupKey(o.side, o.group), o.group_short);
+          r.events.push(o); break;
+        }
+        case "radio_tx": {
+          const k = o.unit + "|" + o.radio_id; closeTx(k, o.t);
+          const x = { ...o, t0: o.t, t1: null }; r.tx.push(x); openTx.set(k, x); o.tx = x;
+          r.events.push(o); break;
+        }
+        case "radio_tx_end": closeTx(o.unit + "|" + o.radio_id, o.t); break;
+        case "radios": {
+          // Only changes go to the event feed: the first report, then radios picked up, dropped or retuned.
+          const e = ent(o.unit), list = Array.isArray(o.radios) ? o.radios : [], prev = e.radios.at(-1);
+          e.radios.push([o.t, list]);
+          if (!prev) { o.changes = list.map(x => ["has", x]); }
+          else {
+            const before = new Map(prev[1].map(x => [x.radio_id, x])), now = new Set(list.map(x => x.radio_id));
+            o.changes = [];
+            for (const x of list) { const b = before.get(x.radio_id); if (!b) o.changes.push(["new", x]); else if (b.channel !== x.channel || b.freq !== x.freq) o.changes.push(["tuned", x]); }
+            for (const x of prev[1]) if (!now.has(x.radio_id)) o.changes.push(["dropped", x]);
+          }
+          if (o.changes.length) r.events.push(o);
+          break;
+        }
+        case "radio_nets": r.nets = Array.isArray(o.nets) ? o.nets : null; break;
         case "loadout": { const e = ent(o.unit); for (const k of ["role", "role_name", "loadout_faction"]) if (o[k] !== undefined) e[k] = o[k]; r.events.push(o); break; }
         case "orbat": r.orbat = o; break;
         case "perf": r.perf.push(o); break;
@@ -364,9 +398,45 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
       const walk = (n, team, path) => { if (!n || typeof n !== "object") return; const p = [...path, n]; r.nodes.set(n.id, { node: n, team, path: p }); for (const c of n.children || []) walk(c, team, p); };
       for (const team of r.orbat.teams) walk(team, team, []);
     }
+    r.tx.sort((a, b) => a.t0 - b.t0);
+    // Transmissions with no end (the player left, the file was cut) are shown for at most 30 s.
+    for (const x of r.tx) if (x.t1 === null) { x.t1 = Math.min(r.duration, x.t0 + 30); x.open = true; }
+    r.txMax = r.tx.reduce((m, x) => Math.max(m, x.t1 - x.t0), 0);
+    // Name each transmission after the TMF network channel on its frequency, if there is one.
+    for (const x of r.tx) {
+      const m = netChannel(r, x.freq, x.radio);
+      x.label = m ? m.ch.name || m.ch.description : x.channel_name || (x.channel !== undefined ? "CH " + x.channel : "radio");
+      if (m) { x.net = m.net; x.netChannel = m.ch; }
+    }
     r.bad = bad;
     return r;
   }
+
+  // TMF network channel on a frequency. ACRE frequency bands don't overlap between radio families,
+  // so the frequency alone picks the channel; shared channels sit on the same frequency in every network.
+  function netChannel(r, freq, radio) {
+    if (!r.nets || typeof freq !== "number" || !freq) return null;
+    let best = null;
+    for (const net of r.nets) for (const ch of net.channels || []) {
+      if (typeof ch.freq !== "number" || Math.abs(ch.freq - freq) > 1e-4) continue;
+      if (!best || (radio && ch.radio === radio && best.ch.radio !== radio)) best = { net, ch };
+    }
+    return best;
+  }
+  const freqText = f => typeof f === "number" && f ? (+f.toFixed(4)) + " MHz" : "";
+  function radioLabel(x) {
+    const m = netChannel(rec, x.freq, x.radio);
+    return m ? m.ch.name || m.ch.description : x.channel_name || (x.channel !== undefined ? "CH " + x.channel : "");
+  }
+  // Transmissions going on at a time.
+  function txAt(time) {
+    const out = [];
+    let lo = 0, hi = rec.tx.length;
+    while (lo < hi) { const m = (lo + hi) >> 1; if (rec.tx[m].t0 < time - rec.txMax) lo = m + 1; else hi = m; }
+    for (let i = lo; i < rec.tx.length && rec.tx[i].t0 <= time; i++) if (rec.tx[i].t1 > time) out.push(rec.tx[i]);
+    return out;
+  }
+  const shortName = (side, name) => rec.groupShort.get(groupKey(side, name)) || "";
 
   // ---------- state at time ----------
   function idx(arr, time) {       // last index with arr[i][0] <= time
@@ -403,7 +473,7 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
   let C = {};
   function readColors() {
     const cs = getComputedStyle(document.documentElement);
-    for (const k of ["ground", "panel", "ink", "ink-soft", "rule", "grid", "grid-major", "accent", "west", "east", "guer", "civ", "dead"]) C[k] = cs.getPropertyValue("--" + k).trim();
+    for (const k of ["ground", "panel", "ink", "ink-soft", "rule", "grid", "grid-major", "accent", "west", "east", "guer", "civ", "dead", "radio"]) C[k] = cs.getPropertyValue("--" + k).trim();
   }
   const sideColor = s => ({ WEST: C.west, EAST: C.east, GUER: C.guer, CIV: C.civ })[s] || C["ink-soft"];
   // Arma marker colour classes; anything unknown is drawn in the soft ink colour.
@@ -705,6 +775,7 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
     // Detail follows the zoom: group markers while units crowd together, per-unit labels once they separate.
     if (view.scale < 3) drawGroups(ctx, states);
     drawEvents(ctx);
+    drawRadio(ctx);
 
     // hit flashes
     for (const h of rec.hits) {
@@ -781,7 +852,7 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
         const list = all(node); if (!list.length) return;
         const m = merge(list, node.name || node.full_name || "ORBAT", side, depth);
         if (list.length > 1 && span(m) < MERGE_PX) { markers.push(m); return; }
-        for (const g of under.get(node) || []) markers.push(merge([g], g.name, side, 0));
+        for (const g of under.get(node) || []) markers.push(merge([g], shortName(g.side, g.name) || g.name, side, 0));
         for (const c of node.children || []) place(c, side, depth + 1);
       };
       for (const team of rec.orbat.teams) place(team, team.side || "", 0);
@@ -793,7 +864,7 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
       const c = clusters.find(c => c.side === g.side && Math.hypot(c.sx - gx, c.sy - gy) < MERGE_PX * .6 && span(merge([...c.list, g], "", g.side, 0)) < MERGE_PX);
       if (c) c.list.push(g); else clusters.push({ side: g.side, sx: gx, sy: gy, list: [g] });
     }
-    for (const c of clusters) markers.push(merge(c.list, c.list[0].name + (c.list.length > 1 ? " +" + (c.list.length - 1) : ""), c.side, c.list.length > 1 ? 1 : 0));
+    for (const c of clusters) markers.push(merge(c.list, (shortName(c.side, c.list[0].name) || c.list[0].name) + (c.list.length > 1 ? " +" + (c.list.length - 1) : ""), c.side, c.list.length > 1 ? 1 : 0));
 
     const font = getComputedStyle(document.body);
     const placed = [];
@@ -887,6 +958,28 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
     }
   }
 
+  // Units on the radio: waves around the speaker and the channel name, at every zoom level.
+  function drawRadio(ctx) {
+    const font = getComputedStyle(document.body).getPropertyValue("--font-data");
+    const seen = new Set();
+    for (const x of txAt(t)) {
+      if (seen.has(x.unit)) continue; seen.add(x.unit);
+      const e = rec.entities.get(x.unit), st = e && stateAt(e, t); if (!st) continue;
+      const v = st.veh && rec.entities.get(st.veh), vs = v && stateAt(v, t);
+      const [sx, sy] = vs ? toScreen(vs.x, vs.y) : toScreen(st.x, st.y);
+      const ph = ((t - x.t0) * 1.5) % 1;
+      ctx.strokeStyle = C.radio; ctx.lineWidth = 2;
+      for (const k of [0, 0.5]) {
+        const f = (ph + k) % 1;
+        ctx.globalAlpha = 1 - f;
+        ctx.beginPath(); ctx.arc(sx, sy, 8 + f * 14, -Math.PI * 0.8, -Math.PI * 0.2); ctx.stroke();
+      }
+      ctx.globalAlpha = 1;
+      ctx.font = "600 11px " + font; ctx.textAlign = "left"; ctx.textBaseline = "middle";
+      halo(ctx, "◉ " + x.label, sx + 12, sy + 12, C.radio);
+    }
+  }
+
   // ---------- timeline ----------
   const tl = $("tl"), tctx = tl.getContext("2d");
   let tlDirty = true, tlBase = null;
@@ -910,6 +1003,10 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
         // AI behaviour: a short tick per combat_mode / enemy_detected / fleeing record, below the kill ticks.
         tctx.fillStyle = C.ink; tctx.globalAlpha = .55;
         for (const o of rec.events) if (o.type === "combat_mode" || o.type === "enemy_detected" || o.type === "fleeing") tctx.fillRect(o.t / D * w - .5, 12, 1, 6);
+        tctx.globalAlpha = 1;
+        // Radio: one bar per transmission, under the AI ticks.
+        tctx.fillStyle = C.radio; tctx.globalAlpha = .8;
+        for (const x of rec.tx) tctx.fillRect(x.t0 / D * w, 19, Math.max(1, (x.t1 - x.t0) / D * w), 4);
         tctx.globalAlpha = 1;
         tctx.fillStyle = C.accent;
         for (const k of rec.spikes) { const x = k.t / D * w; tctx.fillRect(x - 1, h - 20, 2, 12); }
@@ -942,13 +1039,24 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
       case "combat_mode": return ["ai", '<span class="who s-' + esc(o.side) + '">' + esc(o.group) + '</span> is now <span class="tag">' + esc(o.mode) + "</span>"];
       case "enemy_detected": return ["ai", '<span class="who s-' + esc(o.side) + '">' + esc(o.group) + "</span> spotted " + who(o.target, o.t)];
       case "fleeing": return ["ai", '<span class="who s-' + esc(o.side) + '">' + esc(o.group) + "</span> " + (o.fleeing ? "started fleeing" : "stopped fleeing")];
+      case "radio_tx": {
+        const x = o.tx;
+        return ["radio", who(o.unit, o.t) + ' on <span class="tag" style="color:var(--radio)">' + esc(x.label) + "</span>" +
+          (freqText(o.freq) ? ' <span class="tag">' + freqText(o.freq) + "</span>" : "") +
+          ' <span class="tag">' + (x.open ? "no end" : (x.t1 - x.t0).toFixed(1) + " s") + "</span>"];
+      }
+      case "radios": {
+        const name = x => esc(x.radio_name || x.radio) + (radioLabel(x) ? ' <span class="tag">' + esc(radioLabel(x)) + "</span>" : "");
+        const parts = o.changes.map(([k, x]) => k === "has" ? name(x) : k === "new" ? "picked up " + name(x) : k === "tuned" ? "set " + name(x) : "dropped " + esc(x.radio_name || x.radio));
+        return ["radio", who(o.unit, o.t) + (o.changes[0][0] === "has" ? " carries " : " ") + parts.join(", ")];
+      }
       case "building": return ["world", (o.ruin ? "Building destroyed" : "Building changed") + ' <span class="tag">' + esc(o.from) + "</span>" + (o.pos ? ' <span class="tag">' + grid(o.pos[0], o.pos[1]) + "</span>" : "")];
       case "idle": return ["world", o.idle ? "Server empty, recording paused" : "Players back, recording resumed"];
       case "perf_spike": return ["world", 'Server frame took <span class="tag">' + Math.round(o.frame_ms) + " ms</span>" + (o.recorder_ms !== undefined ? ' <span class="tag">recorder ' + (+o.recorder_ms).toFixed(1) + " ms</span>" : "")];
       case "connected": return ["players", '<span class="who">' + esc(o.name) + "</span> connected" + (o.jip ? ' <span class="tag">JIP</span>' : "")];
       case "disconnected": return ["players", '<span class="who">' + esc(o.name) + "</span> disconnected"];
       case "player": return ["players", o.uid ? '<span class="who">' + esc(o.name) + "</span> took control of " + who(o.unit, o.t - 0.001) : who(o.unit, o.t) + " is now AI"];
-      case "group": return ["players", who(o.unit, o.t) + " joined " + esc(o.group) + ' <span class="tag">' + esc(sideName(o.side)) + "</span>"];
+      case "group": return ["players", who(o.unit, o.t) + " joined " + esc(o.group) + (o.group_short ? ' <span class="tag">' + esc(o.group_short) + "</span>" : "") + ' <span class="tag">' + esc(sideName(o.side)) + "</span>"];
       case "respawn": return ["players", who(o.new, o.t) + " respawned"];
       case "marker_created": return ["markers", "Marker placed" + (o.text ? ": " + esc(o.text) : "") + (o.pos ? ' <span class="tag">' + grid(o.pos[0], o.pos[1]) + "</span>" : "")];
       case "marker_updated": return ["markers", "Marker moved" + (o.text ? ": " + esc(o.text) : "")];
@@ -997,7 +1105,8 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
       for (const list of gm.values()) for (const e of list) { const a = aliveUnit(e); if (a === null) continue; total++; if (a) alive++; }
       html += '<h3 class="s-' + esc(sd) + '">' + esc(sideName(sd)) + "<span>" + alive + "/" + total + " alive</span></h3>";
       for (const [g, list] of [...gm].sort((a, b) => (a[0] === "Vehicles") - (b[0] === "Vehicles") || a[0].localeCompare(b[0]))) {
-        html += "<h4>" + esc(g) + "</h4>";
+        const sn = g !== "Vehicles" && shortName(sd, g);
+        html += "<h4>" + esc(g) + (sn && sn !== g ? " <small>" + esc(sn) + "</small>" : "") + "</h4>";
         for (const e of list) html += unitButton(e, sd);
       }
     }
@@ -1053,7 +1162,8 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
     if (!rec || !selected) { card.hidden = true; return; }
     const e = rec.entities.get(selected); if (!e) { card.hidden = true; return; }
     const s = stateAt(e, t);
-    const key = selected + "|" + (s ? [Math.round(s.x), Math.round(s.y), s.alive, s.dmg, s.veh].join() : "x") + "|" + follow;
+    const onAir = txAt(t).filter(x => x.unit === e.id).map(x => x.label).join();
+    const key = selected + "|" + (s ? [Math.round(s.x), Math.round(s.y), s.alive, s.dmg, s.veh].join() : "x") + "|" + follow + "|" + onAir + "|" + idx(e.radios, t);
     if (!force && key === cardKey) return;
     cardKey = key;
     const veh = s && s.veh ? rec.entities.get(s.veh) : null;
@@ -1062,9 +1172,10 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
     const shotsBy = rec.shotList.filter(x => x.t0 <= t && (x.gunner || x.shooter) === e.id).length;
     card.innerHTML = '<h2 class="s-' + esc(sideAt(e, t)) + '">' + esc(nameAt(e, t)) + '</h2><div class="tag">' + esc(e.display) + " · " + esc(e.cls) + "</div><dl>" +
       "<dt>Status</dt><dd>" + (!s ? "not present" : s.alive ? "alive, " + Math.round(s.dmg * 100) + "% damage" : "dead") + "</dd>" +
-      (e.kind === "unit" ? "<dt>Group</dt><dd>" + esc(groupAt(e, t) || "–") + "</dd>" : "") +
+      (e.kind === "unit" ? "<dt>Group</dt><dd>" + esc(groupAt(e, t) || "–") + (shortName(sideAt(e, t), groupAt(e, t)) ? " · " + esc(shortName(sideAt(e, t), groupAt(e, t))) : "") + "</dd>" : "") +
       (e.role_name || e.role ? "<dt>Role</dt><dd>" + esc(e.role_name || e.role) + (e.loadout_faction ? " · " + esc(e.loadout_faction) : "") + "</dd>" : "") +
       (node ? "<dt>ORBAT</dt><dd>" + node.path.map(n => esc(n.name)).join(" › ") + "</dd>" : "") +
+      radioRows(e) +
       (e.callsign ? "<dt>Callsign</dt><dd>" + esc(e.callsign) + "</dd>" : "") +
       (uidAt(e, t) ? "<dt>UID</dt><dd>" + esc(uidAt(e, t)) + "</dd>" : "") +
       (veh ? "<dt>Vehicle</dt><dd>" + esc(veh.display) + "</dd>" : "") +
@@ -1075,7 +1186,78 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
     $("follow").onclick = () => { follow = !follow; renderCard(true); };
     $("deselect").onclick = () => select(0);
   }
+  // Card rows for a unit's radios: TMF network and channels, the radios carried, and what it is saying on.
+  function radioRows(e) {
+    let h = "";
+    const net = rec.nets && e.radio_net !== undefined ? rec.nets.find(n => n.index === e.radio_net) : null;
+    if (net) {
+      const chans = (e.radio_channels || []).map(i => net.channels[i]).filter(Boolean).map(c => esc(c.name || c.description));
+      h += "<dt>Radio net</dt><dd>Network " + (net.index + 1) + (chans.length ? " · " + chans.join(", ") : "") + "</dd>";
+    }
+    const r = lastOf(e.radios, t);
+    if (r && r[1].length) h += "<dt>Radios</dt><dd>" + r[1].map(x => esc(x.radio_name || x.radio) + (radioLabel(x) ? " (" + esc(radioLabel(x)) + ")" : "")).join(", ") + "</dd>";
+    const on = txAt(t).filter(x => x.unit === e.id);
+    if (on.length) h += '<dt>On air</dt><dd style="color:var(--radio)">' + on.map(x => esc(x.label)).join(", ") + "</dd>";
+    return h;
+  }
   function select(id) { selected = id; if (!id) follow = false; renderCard(true); renderRoster(true); }
+
+  // ---------- radio tab ----------
+  function renderRadio() {
+    const pane = $("pane-radio");
+    const carried = [...rec.entities.values()].filter(e => e.radios.length);
+    if (!rec.tx.length && !rec.nets && !carried.length) {
+      pane.innerHTML = '<div class="empty">No radio traffic in this recording. The recorder logs ACRE2 and TFAR transmissions when the server runs one of them.</div>';
+      return;
+    }
+    const len = x => x.t1 - x.t0;
+    const secs = v => v < 60 ? v.toFixed(1) + " s" : fmt(v);
+    const tile = (v, label) => "<div><b>" + v + "</b><small>" + label + "</small></div>";
+    const talkers = new Map(), chans = new Map();
+    for (const x of rec.tx) {
+      const e = rec.entities.get(x.unit), name = e ? nameAt(e, x.t0) : "#" + x.unit;
+      const k = x.netChannel ? x.netChannel : x.label + "|" + (+x.freq || 0);
+      if (!chans.has(k)) chans.set(k, { label: x.label, freq: x.freq, radio: x.radio_name || x.radio, net: x.net, n: 0, time: 0, who: new Set() });
+      const c = chans.get(k); c.n++; c.time += len(x); c.who.add(name);
+      if (!talkers.has(name)) talkers.set(name, { name, side: e ? sideAt(e, x.t0) : "", n: 0, time: 0, chans: new Map() });
+      const p = talkers.get(name); p.n++; p.time += len(x); p.chans.set(x.label, (p.chans.get(x.label) || 0) + 1);
+    }
+    let html = '<div class="sec"><div class="stats">' +
+      tile(rec.tx.length, "transmissions") + tile(secs(rec.tx.reduce((a, x) => a + len(x), 0)), "on air in total") + tile(talkers.size, "people talked") + "</div></div>";
+
+    if (rec.nets) {
+      for (const net of rec.nets) {
+        const members = [...rec.entities.values()].filter(e => e.radio_net === net.index).length;
+        const who = [...(net.sides || []).map(sideName), ...(net.factions || [])].join(", ");
+        html += '<div class="sec"><h3>Network ' + (net.index + 1) + (who ? " · " + esc(who) : "") + "</h3>" +
+          '<table class="tbl"><tr><th>Channel</th><th>Radio</th><th class="n">MHz</th><th class="n">Tx</th><th class="n">On air</th><th class="n">Units</th></tr>' +
+          (net.channels || []).map((ch, i) => {
+            const c = chans.get(ch), on = [...rec.entities.values()].filter(e => e.radio_net === net.index && (e.radio_channels || []).includes(i)).length;
+            return "<tr><td>" + esc(ch.name) + (ch.description ? " <small>" + esc(ch.description) + "</small>" : "") + (ch.shared ? ' <span class="tag">shared</span>' : "") + "</td><td>" + esc(String(ch.radio || "").replace(/^ACRE_/, "")) +
+              '</td><td class="n">' + (typeof ch.freq === "number" ? +ch.freq.toFixed(4) : "–") + '</td><td class="n">' + (c ? c.n : 0) + '</td><td class="n">' + (c ? secs(c.time) : "–") + '</td><td class="n">' + on + "</td></tr>";
+          }).join("") + "</table>" + (members ? '<p class="tag" style="margin:6px 0 0">' + members + " units on this network</p>" : "") + "</div>";
+      }
+    }
+    const other = [...chans].filter(([k]) => typeof k === "string").map(([, c]) => c).sort((a, b) => b.n - a.n);
+    if (other.length) {
+      html += '<div class="sec"><h3>' + (rec.nets ? "Other channels" : "Channels") + '</h3><table class="tbl"><tr><th>Channel</th><th>Radio</th><th class="n">MHz</th><th class="n">Tx</th><th class="n">On air</th></tr>' +
+        other.map(c => "<tr><td>" + esc(c.label) + "</td><td>" + esc(c.radio) + '</td><td class="n">' + (+c.freq ? +(+c.freq).toFixed(4) : "–") + '</td><td class="n">' + c.n + '</td><td class="n">' + secs(c.time) + "</td></tr>").join("") + "</table></div>";
+    }
+    if (talkers.size) {
+      html += '<div class="sec"><h3>Who talked</h3><table class="tbl"><tr><th>Name</th><th>Mostly on</th><th class="n">Tx</th><th class="n">On air</th></tr>' +
+        [...talkers.values()].sort((a, b) => b.time - a.time).map(p => '<tr><td class="s-' + esc(p.side) + '">' + esc(p.name) + "</td><td>" + esc([...p.chans].sort((a, b) => b[1] - a[1])[0][0]) +
+          '</td><td class="n">' + p.n + '</td><td class="n">' + secs(p.time) + "</td></tr>").join("") + "</table></div>";
+    }
+    if (rec.tx.length) {
+      const LIMIT = 1000;
+      html += '<div class="sec"><h3>Transmissions</h3><table class="tbl"><tr><th class="n" style="text-align:left">Time</th><th>Who</th><th>Channel</th><th class="n">Length</th></tr>' +
+        rec.tx.slice(0, LIMIT).map(x => { const e = rec.entities.get(x.unit), sd = e ? sideAt(e, x.t0) : "";
+          return '<tr data-type="" data-t="' + x.t0 + '"><td class="n" style="text-align:left">' + fmt(x.t0) + '</td><td class="s-' + esc(sd) + '">' + esc(e ? nameAt(e, x.t0) : "#" + x.unit) + "</td><td>" + esc(x.label) +
+            '</td><td class="n">' + (x.open ? "–" : secs(len(x))) + "</td></tr>"; }).join("") + "</table>" +
+        (rec.tx.length > LIMIT ? '<p class="tag">First ' + LIMIT + " of " + rec.tx.length + " shown; the Data tab has them all.</p>" : "") + "</div>";
+    }
+    pane.innerHTML = html;
+  }
 
   // ---------- mission tab ----------
   const pad2 = n => String(n).padStart(2, "0");
@@ -1265,7 +1447,8 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
     const sides = new Set([...rec.entities.values()].map(e => e.side));
     $("legend").innerHTML = [...sides].filter(s => ["WEST", "EAST", "GUER", "CIV"].includes(s)).sort().map(s =>
       '<span><i style="background:var(--' + ({ WEST: "west", EAST: "east", GUER: "guer", CIV: "civ" })[s] + ')"></i>' + sideName(s) + "</span>").join("") +
-      '<span><i style="background:var(--accent);border-radius:0;height:2px"></i>Tracer</span>';
+      '<span><i style="background:var(--accent);border-radius:0;height:2px"></i>Tracer</span>' +
+      (rec.tx.length ? '<span><i style="background:var(--radio)"></i>On the radio</span>' : "");
   }
 
   function load(text, label) {
@@ -1280,7 +1463,7 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
       unitMode = r.orbat ? "orbat" : "groups"; $("unitmode").hidden = !r.orbat; setUnitMode(unitMode);
       dataType = null; dataLimit = 100; dataQuery = "";
       renderMeta(); resize(); readColors(); fit(); feedKey = ""; renderFeed(true); renderRoster(true); renderCard(true);
-      renderMission(); renderServer(); renderData(); drawCharts();
+      renderRadio(); renderMission(); renderServer(); renderData(); drawCharts();
       tlDirty = true;
     } catch (err) {
       $("error").textContent = err.message; $("error").hidden = false;
@@ -1299,7 +1482,7 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
   $("filters").onchange = e => { filters[e.target.id.slice(2)] = e.target.checked; renderFeed(true); };
   $("feed").onclick = e => { const li = e.target.closest("li[data-t]"); if (li) { t = +li.dataset.t; } };
   $("pane-units").onclick = e => { const b = e.target.closest("button[data-id]"); if (!b) return; const id = +b.dataset.id; select(id === selected ? 0 : id); const en = rec.entities.get(id), s = en && stateAt(en, t); if (s && id) { view.cx = s.x; view.cy = s.y; } };
-  const TABS = ["events", "units", "mission", "server", "data"];
+  const TABS = ["events", "units", "radio", "mission", "server", "data"];
   for (const name of TABS) {
     $("tab-" + name).onclick = () => {
       for (const x of TABS) { $("tab-" + x).setAttribute("aria-selected", x === name); $("pane-" + x).hidden = x !== name; }
@@ -1309,7 +1492,7 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
   function setUnitMode(m) { unitMode = m; for (const b of $("unitmode").children) b.setAttribute("aria-pressed", b.dataset.m === m); renderRoster(true); }
   $("unitmode").onclick = e => { const b = e.target.closest("button[data-m]"); if (b) setUnitMode(b.dataset.m); };
   // Anything with a time in the Mission, Server and Data tabs seeks there when clicked.
-  for (const name of ["mission", "server", "data"]) $("pane-" + name).addEventListener("click", e => { const x = e.target.closest("[data-t]"); if (x && rec) t = Math.min(rec.duration, +x.dataset.t); });
+  for (const name of ["radio", "mission", "server", "data"]) $("pane-" + name).addEventListener("click", e => { const x = e.target.closest("[data-t]"); if (x && rec) t = Math.min(rec.duration, +x.dataset.t); });
   $("pane-data").addEventListener("click", e => {
     const tr = e.target.closest("tr[data-type]");
     if (tr) { dataType = tr.dataset.type; dataLimit = 100; for (const r of $("types").querySelectorAll("tr[data-type]")) r.setAttribute("aria-selected", r === tr); renderDataList(); $("dq").scrollIntoView({ block: "start" }); }

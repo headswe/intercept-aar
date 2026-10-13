@@ -4,7 +4,7 @@
  *
  * Mission settings in description.ext (all optional):
  *   class AAR { enabled = 1; interval = 1; keyframeInterval = 60; logProjectiles = 1; logHits = 1; logMarkers = 1;
- *               frameBudget = 2; spikeThreshold = 100; pauseWhenEmpty = 1; logAI = 1; };
+ *               frameBudget = 2; spikeThreshold = 100; pauseWhenEmpty = 1; logAI = 1; logRadio = 1; };
  */
 if (!isServer) exitWith {};
 aar_active = false;
@@ -27,6 +27,14 @@ aar_spikeThreshold = (["spikeThreshold", 100] call _setting) max 1;  // ms; slow
 aar_pauseWhenEmpty = (["pauseWhenEmpty", 1] call _setting) != 0;
 aar_logAI = (["logAI", 1] call _setting) != 0;  // AI group behaviour, enemies detected, fleeing
 aar_tmf = isClass (configFile >> "CfgPatches" >> "tmf_common");  // TMF ORBAT and loadouts
+aar_logRadio = (["logRadio", 1] call _setting) != 0 && {isClass (configFile >> "CfgPatches" >> "acre_main") || isClass (configFile >> "CfgPatches" >> "tfar_core")};
+// TMF's ACRE2 radio networks, when the mission uses them.
+aar_tmfNets = [];
+if (aar_tmf && aar_logRadio && {(getMissionConfigValue ["TMF_AcreNetworkEnabled", false]) in [true, 1]}) then {
+    aar_tmfNets = getMissionConfigValue ["TMF_AcreSettings", []];
+    if (aar_tmfNets isEqualType "") then { aar_tmfNets = if (aar_tmfNets isEqualTo "") then { [] } else { call compile aar_tmfNets } };
+    if (isNil "aar_tmfNets" || {!(aar_tmfNets isEqualType [])}) then { aar_tmfNets = [] };
+};
 
 private _result = "arma_aar" callExtension ["open", [missionName, worldName]];
 _result params ["_output", "_code"];
@@ -56,6 +64,8 @@ aar_snapStats = [0, 0, 0];
 aar_batch = 100;        // entities per frame, adjusted to stay within aar_frameBudget
 aar_lastWorkMs = 0;
 aar_idle = false;
+aar_radioOpen = createHashMap;          // "unit radio" -> true while a transmission is open
+aar_radioNetsPending = aar_tmfNets isNotEqualTo [];  // radio_nets is written once TMF built its presets
 
 ["header", [
     "version", "1",
@@ -83,6 +93,12 @@ aar_idle = false;
 ]] call aar_fnc_rec;
 
 if (aar_tmf) then { call aar_fnc_orbat };
+
+if (aar_logRadio) then {
+    // ACRE2 and TFAR raise transmissions only on the speaker's machine, so every machine with a
+    // player gets the client half as code (no mod needed there), queued for players joining later.
+    [[], aar_fnc_radioClient] remoteExecCall ["call", [0, -2] select isDedicated, "aar_radioClient"];
+};
 
 addMissionEventHandler ["EachFrame", { call aar_fnc_frame }];
 
