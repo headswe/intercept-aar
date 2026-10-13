@@ -74,6 +74,13 @@ main { display: grid; grid-template-columns: minmax(0, 1fr) 390px; gap: 0; min-h
 .legend span { display: inline-flex; align-items: center; gap: 5px; }
 .legend i { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
 
+.layers { position: absolute; left: 12px; top: 40px; width: min(320px, calc(100% - 70px)); background: var(--panel); border: 1px solid var(--rule); border-radius: 6px; padding: 10px 12px; font-size: 12px; box-shadow: 0 6px 18px rgba(0,0,0,.12); display: grid; gap: 6px; z-index: 1; }
+.layers h2 { font-family: var(--font-display); font-size: 1.05rem; font-weight: 600; margin: 0; }
+.layers label { display: grid; gap: 2px; color: var(--ink-soft); }
+.layers label.check { display: flex; gap: 6px; align-items: center; color: var(--ink); }
+.layers input:not([type="checkbox"]), .layers select { font: inherit; font-family: var(--font-data); font-size: 11px; padding: 4px 6px; border: 1px solid var(--rule); border-radius: 3px; background: var(--ground); color: var(--ink); min-width: 0; }
+.layers .two { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.layers .note { color: var(--ink-soft); margin: 0; line-height: 1.4; }
 .card { position: absolute; right: 52px; top: 10px; width: 230px; background: var(--panel); border: 1px solid var(--rule); border-radius: 6px; padding: 10px 12px; font-size: 13px; box-shadow: 0 6px 18px rgba(0,0,0,.12); }
 .card h2 { font-family: var(--font-display); font-size: 1.15rem; font-weight: 600; margin: 0 0 2px; text-wrap: balance; }
 .card dl { display: grid; grid-template-columns: auto 1fr; gap: 2px 10px; margin: 8px 0; font-size: 12px; }
@@ -190,9 +197,24 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
         <button class="btn" id="zin" aria-label="Zoom in">+</button>
         <button class="btn" id="zout" aria-label="Zoom out">−</button>
         <button class="btn" id="zfit" aria-label="Fit to recording">⤢</button>
+        <button class="btn" id="zlayers" aria-label="Map background" aria-expanded="false"><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" d="M8 2 1.5 5.5 8 9l6.5-3.5zM1.5 8.5 8 12l6.5-3.5M1.5 11 8 14.5l6.5-3.5"/></svg></button>
       </div>
       <div class="scale" id="scale"><i></i><span></span></div>
       <div class="card" id="card" hidden></div>
+      <form class="layers" id="layers" hidden onsubmit="return false">
+        <h2>Map background</h2>
+        <label class="check"><input type="checkbox" id="tl-on"> Show map tiles</label>
+        <label>Tile URL <input id="tl-url" spellcheck="false"></label>
+        <div class="two">
+          <label>World <input id="tl-world" spellcheck="false"></label>
+          <label>World size (m) <input id="tl-size" inputmode="numeric"></label>
+        </div>
+        <div class="two">
+          <label>Highest zoom <input id="tl-max" type="number" min="0" max="22"></label>
+          <label>Tile row 0 is <select id="tl-tms"><option value="0">north (XYZ)</option><option value="1">south (TMS)</option></select></label>
+        </div>
+        <p class="note">{world}, {z}, {x} and {y} are filled in. At zoom 0 the whole world is one 256 px tile. <span id="tl-status"></span></p>
+      </form>
     </div>
 
     <aside>
@@ -481,6 +503,69 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
     if (sel) { ctx.strokeStyle = C.accent; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(sx, sy, L + 6, 0, Math.PI * 2); ctx.stroke(); }
   }
 
+  // ---------- map tiles ----------
+  // Tiles cover the square world [0, world size] in metres; zoom z splits it into 2^z × 2^z tiles of 256 px.
+  // Missing tiles (sea, or zooms the server does not have) fall back to the nearest parent tile.
+  const WORLD_SIZES = { altis: 30720, stratis: 8192, tanoa: 15360, malden: 12800, enoch: 12800, vr: 8192 };
+  const tiles = { on: true, url: "https://mission-db.1tac.eu/tiles/{world}/tiles/{z}/{x}/{y}.png", maxZoom: 10, tms: false, world: "", size: 0 };
+  try { Object.assign(tiles, JSON.parse(localStorage.getItem("aar-tiles") || "{}")); } catch {}
+  const saveTiles = () => { try { localStorage.setItem("aar-tiles", JSON.stringify({ on: tiles.on, url: tiles.url, maxZoom: tiles.maxZoom, tms: tiles.tms })); } catch {} };
+  const tileCache = new Map();
+  let tileStats = { ok: 0, failed: 0 };
+  function tileAt(z, x, y) {
+    const n = 2 ** z, row = tiles.tms ? n - 1 - y : y;
+    const url = tiles.url.replaceAll("{world}", encodeURIComponent(tiles.world)).replaceAll("{z}", z).replaceAll("{x}", x).replaceAll("{y}", row);
+    let c = tileCache.get(url);
+    if (!c) {
+      if (tileCache.size > 3000) tileCache.clear();
+      const img = new Image();
+      c = { img, ok: null };
+      img.onload = () => { c.ok = true; tileStats.ok++; };
+      img.onerror = () => { c.ok = false; tileStats.failed++; };
+      img.src = url;
+      tileCache.set(url, c);
+    }
+    return c;
+  }
+  function drawTiles() {
+    const ws = tiles.size;
+    if (!tiles.on || !ws || !tiles.world || !tiles.url) return;
+    const ctx = mctx;
+    const z = Math.max(0, Math.min(tiles.maxZoom, Math.ceil(Math.log2(view.scale * ws / 256 * DPR))));
+    const n = 2 ** z, tm = ws / n;
+    const [wx0, wy1] = toWorld(0, 0), [wx1, wy0] = toWorld(W, H);
+    const c0 = Math.max(0, Math.floor(wx0 / tm)), c1 = Math.min(n - 1, Math.floor(wx1 / tm));
+    const r0 = Math.max(0, Math.floor((ws - wy1) / tm)), r1 = Math.min(n - 1, Math.floor((ws - wy0) / tm));
+    if (c1 < c0 || r1 < r0 || (c1 - c0 + 1) * (r1 - r0 + 1) > 600) return;
+    const dark = matchMedia("(prefers-color-scheme: dark)").matches && document.documentElement.dataset.theme !== "light" || document.documentElement.dataset.theme === "dark";
+    ctx.save();
+    if (dark) ctx.filter = "brightness(.62) saturate(.8)";
+    for (let r = r0; r <= r1; r++) for (let c = c0; c <= c1; c++) {
+      // Screen box of tile (z, c, r); row 0 is the north edge of the world.
+      const [sx0, sy0] = toScreen(c * tm, ws - r * tm), [sx1, sy1] = toScreen((c + 1) * tm, ws - (r + 1) * tm);
+      let zz = z, cc = c, rr = r, t = tileAt(zz, cc, rr);
+      while (!t.ok && zz > 0 && z - zz < 6) { zz--; cc >>= 1; rr >>= 1; t = tileAt(zz, cc, rr); }
+      if (!t.ok) continue;
+      if (zz === z) { ctx.drawImage(t.img, sx0 - .25, sy0 - .25, sx1 - sx0 + .5, sy1 - sy0 + .5); continue; }
+      // Draw the part of the parent tile that covers this one.
+      const k = 2 ** (z - zz), w = t.img.naturalWidth / k, h = t.img.naturalHeight / k;
+      ctx.drawImage(t.img, (c - cc * k) * w, (r - rr * k) * h, w, h, sx0 - .25, sy0 - .25, sx1 - sx0 + .5, sy1 - sy0 + .5);
+    }
+    ctx.restore();
+  }
+  function syncTilesForm() {
+    $("tl-on").checked = tiles.on; $("tl-url").value = tiles.url; $("tl-world").value = tiles.world;
+    $("tl-size").value = tiles.size || ""; $("tl-max").value = tiles.maxZoom; $("tl-tms").value = tiles.tms ? "1" : "0";
+  }
+  $("zlayers").onclick = () => { const open = $("layers").hidden; $("layers").hidden = !open; $("zlayers").setAttribute("aria-expanded", open); if (open) syncTilesForm(); };
+  $("layers").addEventListener("input", () => {
+    tiles.on = $("tl-on").checked; tiles.url = $("tl-url").value.trim(); tiles.world = $("tl-world").value.trim();
+    tiles.size = +$("tl-size").value || 0; tiles.maxZoom = Math.max(0, Math.min(22, Math.round(+$("tl-max").value || 0))); tiles.tms = $("tl-tms").value === "1";
+    tileStats = { ok: 0, failed: 0 };
+    saveTiles();
+  });
+  setInterval(() => { if (!$("layers").hidden) $("tl-status").textContent = !tiles.size ? "Enter the world size to place the tiles." : tileStats.ok || tileStats.failed ? tileStats.ok + " tiles loaded, " + tileStats.failed + " missing." : ""; }, 500);
+
   let drawn = [];   // [id, sx, sy] for picking
   function drawMap() {
     const ctx = mctx;
@@ -488,6 +573,7 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
     ctx.fillStyle = C.ground; ctx.fillRect(0, 0, W, H);
     if (!rec) return;
     if (follow && selected) { const e = rec.entities.get(selected), s = e && stateAt(e, t); if (s) { view.cx = s.x; view.cy = s.y; } }
+    drawTiles();
     drawGrid();
 
     // kill sites
@@ -969,6 +1055,10 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
       const r = parse(text, label);
       r.eventTimes = r.events.map(e => [e.t]);
       r.perfTimes = r.perf.map(p => [p.t]);
+      tiles.world = String(r.header.world || "").toLowerCase();
+      tiles.size = +r.header.world_size || WORLD_SIZES[tiles.world] || 0;
+      tileStats = { ok: 0, failed: 0 };
+      if (!$("layers").hidden) syncTilesForm();
       rec = r; t = 0; selected = 0; follow = false; playing = false; setPlayIcon();
       $("error").hidden = true;
       unitMode = r.orbat ? "orbat" : "groups"; $("unitmode").hidden = !r.orbat; setUnitMode(unitMode);
