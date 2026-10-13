@@ -67,13 +67,6 @@ main { display: grid; grid-template-columns: minmax(0, 1fr) 390px; gap: 0; min-h
 .legend span { display: inline-flex; align-items: center; gap: 5px; }
 .legend i { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
 
-.layers { position: absolute; left: 12px; top: 40px; width: min(320px, calc(100% - 70px)); background: var(--panel); border: 1px solid var(--rule); border-radius: 6px; padding: 10px 12px; font-size: 12px; box-shadow: 0 6px 18px rgba(0,0,0,.12); display: grid; gap: 6px; z-index: 1; }
-.layers h2 { font-family: var(--font-display); font-size: 1.05rem; font-weight: 600; margin: 0; }
-.layers label { display: grid; gap: 2px; color: var(--ink-soft); }
-.layers label.check { display: flex; gap: 6px; align-items: center; color: var(--ink); }
-.layers input:not([type="checkbox"]), .layers select { font: inherit; font-family: var(--font-data); font-size: 11px; padding: 4px 6px; border: 1px solid var(--rule); border-radius: 3px; background: var(--ground); color: var(--ink); min-width: 0; }
-.layers .two { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
-.layers .note { color: var(--ink-soft); margin: 0; line-height: 1.4; }
 .card { position: absolute; right: 52px; top: 10px; width: 230px; background: var(--panel); border: 1px solid var(--rule); border-radius: 6px; padding: 10px 12px; font-size: 13px; box-shadow: 0 6px 18px rgba(0,0,0,.12); }
 .card h2 { font-family: var(--font-display); font-size: 1.15rem; font-weight: 600; margin: 0 0 2px; text-wrap: balance; }
 .card dl { display: grid; grid-template-columns: auto 1fr; gap: 2px 10px; margin: 8px 0; font-size: 12px; }
@@ -190,27 +183,9 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
         <button class="btn" id="zin" aria-label="Zoom in">+</button>
         <button class="btn" id="zout" aria-label="Zoom out">−</button>
         <button class="btn" id="zfit" aria-label="Fit to recording">⤢</button>
-        <button class="btn" id="zlayers" aria-label="Map background" aria-expanded="false"><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" d="M8 2 1.5 5.5 8 9l6.5-3.5zM1.5 8.5 8 12l6.5-3.5M1.5 11 8 14.5l6.5-3.5"/></svg></button>
       </div>
       <div class="scale" id="scale"><i></i><span></span> <em id="tilenote"></em></div>
       <div class="card" id="card" hidden></div>
-      <form class="layers" id="layers" hidden onsubmit="return false">
-        <h2>Map layers</h2>
-        <label class="check"><input type="checkbox" id="sh-groups"> Group markers</label>
-        <label class="check"><input type="checkbox" id="sh-events"> Events on the map</label>
-        <label class="check"><input type="checkbox" id="tl-on"> Map tiles</label>
-        <label>Tile URL <input id="tl-url" spellcheck="false"></label>
-        <div class="two">
-          <label>World <input id="tl-world" spellcheck="false"></label>
-          <label>World size (m) <input id="tl-size" inputmode="numeric"></label>
-        </div>
-        <div class="two">
-          <label>Highest zoom <input id="tl-max" type="number" min="0" max="22"></label>
-          <label>Tile row 0 is <select id="tl-tms"><option value="0">north (XYZ)</option><option value="1">south (TMS)</option></select></label>
-        </div>
-        <p class="note">{world}, {z}, {x} and {y} are filled in. At zoom 0 the whole world is one 256 px tile. <span id="tl-status"></span></p>
-        <p class="note" id="tl-last-wrap" hidden>Last tile asked for: <a id="tl-last" target="_blank" rel="noopener"></a></p>
-      </form>
     </div>
 
     <aside>
@@ -358,9 +333,18 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
     r.shotList = [...r.shots.values()].sort((a, b) => a.t0 - b.t0);
     r.interval = r.header.interval || 1;
     // world bounds
-    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
-    for (const e of r.entities.values()) for (const s of e.states) { x0 = Math.min(x0, s[1]); x1 = Math.max(x1, s[1]); y0 = Math.min(y0, s[2]); y1 = Math.max(y1, s[2]); }
-    if (!isFinite(x0)) { x0 = y0 = 0; x1 = y1 = 1000; }
+    // Fit to where most of the action is: objects parked at the map origin or far-off strays would
+    // otherwise zoom the view out to the whole map, so take the 2nd to 98th percentile of positions.
+    const xs = [], ys = [];
+    for (const e of r.entities.values()) for (const s of e.states) { if (Math.abs(s[1]) < 1 && Math.abs(s[2]) < 1) continue; xs.push(s[1]); ys.push(s[2]); }
+    let x0, y0, x1, y1;
+    if (xs.length) {
+      xs.sort((a, b) => a - b); ys.sort((a, b) => a - b);
+      const q = (a, f) => a[Math.min(a.length - 1, Math.max(0, Math.round(f * (a.length - 1))))];
+      x0 = q(xs, .02); x1 = q(xs, .98); y0 = q(ys, .02); y1 = q(ys, .98);
+      const px = (x1 - x0) * .08 + 20, py = (y1 - y0) * .08 + 20;
+      x0 -= px; x1 += px; y0 -= py; y1 += py;
+    } else { x0 = y0 = 0; x1 = y1 = 1000; }
     r.bounds = { x0, y0, x1, y1 };
     for (const i of r.idle) if (i[1] === null) i[1] = r.duration;
     r.perf.sort((a, b) => a.t - b.t);
@@ -520,33 +504,33 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
   // Tiles cover the square world [0, world size] in metres; zoom z splits it into 2^z × 2^z tiles of 256 px.
   // Missing tiles (sea, or zooms the server does not have) fall back to the nearest parent tile.
   const WORLD_SIZES = { altis: 30720, stratis: 8192, tanoa: 15360, malden: 12800, enoch: 12800, vr: 8192 };
-  const tiles = { on: true, url: "https://mission-db.1tac.eu/tiles/{world}/tiles/{z}/{x}/{y}.png", maxZoom: 10, tms: false, world: "", size: 0 };
-  try { Object.assign(tiles, JSON.parse(localStorage.getItem("aar-tiles") || "{}")); } catch {}
-  const show = { groups: true, events: true };
-  try { Object.assign(show, JSON.parse(localStorage.getItem("aar-show") || "{}")); } catch {}
-  const saveTiles = () => { try { localStorage.setItem("aar-tiles", JSON.stringify({ on: tiles.on, url: tiles.url, maxZoom: tiles.maxZoom, tms: tiles.tms })); localStorage.setItem("aar-show", JSON.stringify(show)); } catch {} };
+  const tiles = { url: "https://mission-db.1tac.eu/tiles/{world}/tiles/{z}/{x}/{y}.png", world: "", size: 0 };
+  // Highest zoom the server has for this world, learnt as tiles load: a zoom where tiles keep failing
+  // while none load caps the zoom one below it.
+  let zoomStats = [], maxZoom = 18;
   const tileCache = new Map();
-  let tileStats = { ok: 0, failed: 0 }, lastTile = "";
+  let tileStats = { ok: 0, failed: 0 };
   function tileAt(z, x, y) {
-    const n = 2 ** z, row = tiles.tms ? n - 1 - y : y;
+    const row = y;
     const url = tiles.url.replaceAll("{world}", encodeURIComponent(tiles.world)).replaceAll("{z}", z).replaceAll("{x}", x).replaceAll("{y}", row);
     let c = tileCache.get(url);
     if (!c) {
       if (tileCache.size > 3000) tileCache.clear();
       const img = new Image();
       c = { img, ok: null };
-      img.onload = () => { c.ok = true; tileStats.ok++; };
-      img.onerror = () => { c.ok = false; tileStats.failed++; };
-      img.src = url; lastTile = url;
+      const zs = zoomStats[z] ||= { ok: 0, failed: 0 };
+      img.onload = () => { c.ok = true; tileStats.ok++; zs.ok++; };
+      img.onerror = () => { c.ok = false; tileStats.failed++; zs.failed++; if (!zs.ok && zs.failed >= 6 && z > 0) maxZoom = Math.min(maxZoom, z - 1); };
+      img.src = url;
       tileCache.set(url, c);
     }
     return c;
   }
   function drawTiles() {
     const ws = tiles.size;
-    if (!tiles.on || !ws || !tiles.world || !tiles.url) return;
+    if (!ws || !tiles.world) return;
     const ctx = mctx;
-    const z = Math.max(0, Math.min(tiles.maxZoom, Math.ceil(Math.log2(view.scale * ws / 256 * DPR))));
+    const z = Math.max(0, Math.min(maxZoom, Math.ceil(Math.log2(view.scale * ws / 256 * DPR))));
     const n = 2 ** z, tm = ws / n;
     const [wx0, wy1] = toWorld(0, 0), [wx1, wy0] = toWorld(W, H);
     const c0 = Math.max(0, Math.floor(wx0 / tm)), c1 = Math.min(n - 1, Math.floor(wx1 / tm));
@@ -568,26 +552,9 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
     }
     ctx.restore();
   }
-  function syncTilesForm() {
-    $("sh-groups").checked = show.groups; $("sh-events").checked = show.events;
-    $("tl-on").checked = tiles.on; $("tl-url").value = tiles.url; $("tl-world").value = tiles.world;
-    $("tl-size").value = tiles.size || ""; $("tl-max").value = tiles.maxZoom; $("tl-tms").value = tiles.tms ? "1" : "0";
-  }
-  $("zlayers").onclick = () => { const open = $("layers").hidden; $("layers").hidden = !open; $("zlayers").setAttribute("aria-expanded", open); if (open) syncTilesForm(); };
-  $("layers").addEventListener("input", () => {
-    show.groups = $("sh-groups").checked; show.events = $("sh-events").checked;
-    tiles.on = $("tl-on").checked; tiles.url = $("tl-url").value.trim(); tiles.world = $("tl-world").value.trim();
-    tiles.size = +$("tl-size").value || 0; tiles.maxZoom = Math.max(0, Math.min(22, Math.round(+$("tl-max").value || 0))); tiles.tms = $("tl-tms").value === "1";
-    tileStats = { ok: 0, failed: 0 };
-    saveTiles();
-  });
   setInterval(() => {
-    const failing = tiles.on && rec && tileStats.failed > 0 && tileStats.ok === 0;
-    $("tilenote").textContent = !tiles.on || !rec ? "" : !tiles.size ? "Map tiles off: world size unknown" : failing ? "Map tiles failed to load (" + tileStats.failed + "), see the layers button" : "";
-    if ($("layers").hidden) return;
-    $("tl-status").textContent = !tiles.size ? "Enter the world size to place the tiles." : tileStats.ok || tileStats.failed ? tileStats.ok + " tiles loaded, " + tileStats.failed + " missing." : "";
-    $("tl-last-wrap").hidden = !lastTile; $("tl-last").href = lastTile; $("tl-last").textContent = lastTile;
-  }, 500);
+    $("tilenote").textContent = rec && tiles.size && tileStats.failed > 5 && tileStats.ok === 0 ? "No map tiles for " + tiles.world : "";
+  }, 1000);
 
   let drawn = [];   // [id, sx, sy] for picking
   function drawMap() {
@@ -686,8 +653,9 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
       }
     }
 
-    if (show.groups) drawGroups(ctx, states);
-    if (show.events) drawEvents(ctx);
+    // Detail follows the zoom: group markers while units crowd together, per-unit labels once they separate.
+    if (view.scale < 3) drawGroups(ctx, states);
+    drawEvents(ctx);
 
     // hit flashes
     for (const h of rec.hits) {
@@ -724,8 +692,12 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
     for (const [k, g] of [...groups].sort((a, b) => b[1].y - a[1].y)) {
       const [cx, cy] = toScreen(g.x / g.n, g.y / g.n);
       // Stack markers upwards when another group's marker already sits there.
-      let my = cy - 30;
-      while (placed.some(([px, py]) => Math.abs(px - cx) < 110 && Math.abs(py - my) < 26)) my -= 26;
+      // Stack markers upwards when another group's marker already sits there, at most three deep;
+      // past that the marker is drawn without its labels so a crowded area stays readable.
+      let my = cy - 30, depth = 0;
+      while (depth < 3 && placed.some(([px, py]) => Math.abs(px - cx) < 110 && Math.abs(py - my) < 26)) { my -= 26; depth++; }
+      const crowded = placed.some(([px, py]) => Math.abs(px - cx) < 110 && Math.abs(py - my) < 26);
+      if (crowded) my = cy - 30;
       placed.push([cx, my]);
       const info = rec.groupInfo.get(k);
       const mode = info && lastOf(info.modes, t), flee = info && lastOf(info.flee, t);
@@ -740,11 +712,12 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
       ctx.moveTo(x - W2, y - H2); ctx.lineTo(x + W2, y + H2); ctx.moveTo(x + W2, y - H2); ctx.lineTo(x - W2, y + H2); ctx.stroke();
       if (g.vehicle * 2 > g.n) { ctx.beginPath(); ctx.ellipse(x, y, W2 - 4, H2 - 3, 0, 0, Math.PI * 2); ctx.stroke(); }
       if (g.player) { ctx.strokeStyle = C.ink; ctx.lineWidth = 1; ctx.strokeRect(x - W2 - 3, y - H2 - 3, W2 * 2 + 6, H2 * 2 + 6); }
+      if (crowded) continue;
       ctx.textAlign = "left"; ctx.textBaseline = "middle";
       ctx.font = "600 12px " + font.getPropertyValue("--font-ui");
       halo(ctx, g.name + " (" + g.n + ")", x + W2 + 6, y - 4, C.ink);
       const tags = [];
-      if (mode) tags.push(MODE_SHORT[mode[1]] || mode[1]);
+      if (mode && mode[1] !== "AWARE") tags.push(MODE_SHORT[mode[1]] || mode[1]);   // AWARE is the AI default
       if (flee && flee[1]) tags.push("FLEEING");
       if (tags.length) {
         ctx.font = "600 10px " + font.getPropertyValue("--font-data");
@@ -755,6 +728,7 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
   }
   // Recent events float as short labels at the unit or group they concern, fading out over a few seconds.
   const EVENT_SECONDS = 4;
+  const GROUP_EVENTS = new Set(["combat_mode", "enemy_detected", "fleeing", "killed"]);
   function eventLabel(o) {
     switch (o.type) {
       case "combat_mode": return [o.leader, MODE_SHORT[o.mode] || o.mode, o.mode === "COMBAT"];
@@ -790,6 +764,8 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
     ctx.textAlign = "center"; ctx.textBaseline = "bottom"; ctx.font = "600 11px " + font;
     for (let i = i1; i >= 0 && t - rec.events[i].t <= EVENT_SECONDS; i--) {
       const o = rec.events[i], l = eventLabel(o); if (!l || !l[0]) continue;
+      // Per-unit labels only once zoomed in far enough to tell units apart (about 40 px per 100 m).
+      if (view.scale < 0.4 && (!GROUP_EVENTS.has(o.type) || o.mode === "AWARE")) continue;
       const e = rec.entities.get(l[0]), st = e && stateAt(e, t); if (!st) continue;
       const n = stack.get(l[0]) || 0; if (n >= 3) continue; stack.set(l[0], n + 1);
       const [sx, sy] = toScreen(st.x, st.y), age = t - o.t;
@@ -931,7 +907,7 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
     const count = node => { let a = 0, n = 0; for (const e of at.get(node) || []) { const x = aliveUnit(e); if (x === null) continue; n++; if (x) a++; } for (const c of node.children || []) { const [ca, cn] = count(c); a += ca; n += cn; } return [a, n]; };
     const draw = (node, sd) => {
       const [a, n] = count(node);
-      let h = '<h4 class="node"><span>' + esc(node.name || "Node " + node.id) + (node.full_name && node.full_name !== node.name ? ' <small>' + esc(node.full_name) + "</small>" : "") + "</span><small>" + (n ? a + "/" + n + " alive" : "") + "</small></h4>";
+      let h = '<h4 class="node"><span>' + esc(node.name || node.full_name || "Node " + node.id) + (node.name && node.full_name && node.full_name.trim() !== node.name ? ' <small>' + esc(node.full_name) + "</small>" : "") + "</span><small>" + (n ? a + "/" + n + " alive" : "") + "</small></h4>";
       const list = (at.get(node) || []).sort((x, y) => (x.kind !== "unit") - (y.kind !== "unit") || (groupAt(x, t) || "").localeCompare(groupAt(y, t) || "") || x.id - y.id);
       for (const e of list) h += unitButton(e, sideAt(e, t));
       const kids = [...(node.children || [])].sort((x, y) => (x.order ?? 0) - (y.order ?? 0));
@@ -1020,7 +996,7 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
       row("In-game date", Array.isArray(h.date) && h.date.length >= 5 ? h.date[0] + "-" + pad2(h.date[1]) + "-" + pad2(h.date[2]) + " " + pad2(h.date[3]) + ":" + pad2(h.date[4]) : "", true) +
       row("Time speed", h.time_multiplier !== undefined && +h.time_multiplier !== 1 ? esc(h.time_multiplier) + "×" : "", true) +
       row("Weather", Array.isArray(h.weather) ? "overcast " + pct(h.weather[0]) + ", fog " + pct(h.weather[1]) + ", rain " + pct(h.weather[2]) : "") +
-      row("Arma version", Array.isArray(h.game_version) ? esc(h.game_version[0]) + " build " + esc(h.game_version[1]) : "", true) +
+      row("Arma version", Array.isArray(h.game_version) ? esc(h.game_version[0] >= 100 ? (h.game_version[0] / 100).toFixed(2) : h.game_version[0]) + " build " + esc(h.game_version[1]) : "", true) +
       row("Multiplayer", h.multiplayer === undefined ? "" : h.multiplayer ? "yes" : "no") +
       row("Snapshots", h.interval ? "every " + esc(h.interval) + " s, full every " + esc(h.keyframe_interval) + " s" : "") +
       row("Length", fmt(rec.duration), true) +
@@ -1187,8 +1163,7 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
       r.perfTimes = r.perf.map(p => [p.t]);
       tiles.world = String(r.header.world || "").toLowerCase();
       tiles.size = +r.header.world_size || WORLD_SIZES[tiles.world] || 0;
-      tileStats = { ok: 0, failed: 0 };
-      if (!$("layers").hidden) syncTilesForm();
+      tileStats = { ok: 0, failed: 0 }; zoomStats = []; maxZoom = 18;
       rec = r; t = 0; selected = 0; follow = false; playing = false; setPlayIcon();
       $("error").hidden = true;
       unitMode = r.orbat ? "orbat" : "groups"; $("unitmode").hidden = !r.orbat; setUnitMode(unitMode);
