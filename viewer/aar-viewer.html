@@ -246,7 +246,7 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
     ["shots", "Shots", false],
   ];
   // Record types the parser files somewhere other than the event feed.
-  const NOT_EVENTS = new Set(["header", "entity", "snap", "deleted", "submunition", "proj_end", "orbat", "perf", "radio_tx_end", "radio_nets"]);
+  const NOT_EVENTS = new Set(["header", "entity", "snap", "deleted", "submunition", "proj_end", "orbat", "perf", "radio_tx_end", "radio_nets", "cover_map"]);
 
   let rec = null;               // parsed recording
   let t = 0, playing = false, speed = 4;
@@ -256,7 +256,7 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
 
   const KNOWN = new Set(["end", "group", "player", "shot", "proj_hit", "proj_splash", "killed", "hit", "loadout", "perf_spike", "idle", "building",
     "marker_created", "marker_updated", "marker_deleted", "get_in", "get_out", "seat", "respawn", "connected", "disconnected", "combat_mode", "enemy_detected", "fleeing",
-    "radio_tx", "radios"]);
+    "radio_tx", "radios", "cover_map"]);
 
   // AI group state from combat_mode / enemy_detected / fleeing, keyed by side and group name.
   const groupKey = (side, name) => side + "|" + name;
@@ -270,7 +270,7 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
   // ---------- parsing ----------
   function parse(text, label) {
     const r = { header: {}, end: null, entities: new Map(), shots: new Map(), hits: [], kills: [], events: [], duration: 0, label,
-      counts: new Map(), raw: new Map(), orbat: null, perf: [], spikes: [], idle: [], markers: new Map(), buildings: [], damage: [], groupInfo: new Map(), detections: [],
+      counts: new Map(), raw: new Map(), orbat: null, perf: [], spikes: [], idle: [], markers: new Map(), coverMaps: new Map(), buildings: [], damage: [], groupInfo: new Map(), detections: [],
       tx: [], nets: null, groupShort: new Map() };
     const openTx = new Map();   // "unit|radio id" -> transmission still going
     const closeTx = (k, time) => { const x = openTx.get(k); if (x) { x.t1 = time; openTx.delete(k); } };
@@ -354,11 +354,23 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
           if (!m) { m = { states: [], deletedAt: undefined }; r.markers.set(o.marker, m); }
           if (o.type === "marker_deleted") m.deletedAt = o.t;
           else {
-            const p = m.states.at(-1) || [0, null, "", "", ""];
-            m.states.push([o.t, o.pos || p[1], o.text ?? p[2], o.color ?? p[3], o.markerType ?? p[4]]);
+            // Each state carries every property; older recordings send only some, so carry the rest over.
+            const p = m.states.at(-1) || { pos: null, text: "", color: "", type: "", shape: "ICON", brush: "Solid", size: [1, 1], dir: 0, alpha: 1, line: null };
+            const st = { t: o.t, pos: o.pos || p.pos, text: o.text ?? p.text, color: o.color ?? p.color, type: o.markerType ?? p.type, shape: o.shape ?? p.shape,
+              brush: o.brush ?? p.brush, size: o.size ?? p.size, dir: o.dir ?? p.dir, alpha: o.alpha ?? p.alpha, line: o.line ?? p.line };
+            if (o.type === "marker_updated") o.moved = !!(o.pos && p.pos && Math.hypot(o.pos[0] - p.pos[0], o.pos[1] - p.pos[1]) > 1);
+            m.states.push(st);
             if (o.type === "marker_created") m.deletedAt = undefined;
           }
-          r.events.push(o); break;
+          // Markers that were on the map from the start are drawn but not listed as events.
+          if (!o.editor) r.events.push(o);
+          break;
+        }
+        case "cover_map": {
+          let c = r.coverMaps.get(o.id);
+          if (!c) { c = { states: [] }; r.coverMaps.set(o.id, c); }
+          c.states.push(o.removed ? { t: o.t, removed: true } : { t: o.t, pos: o.pos, area: o.area });
+          break;
         }
         case "player": ent(o.unit).players.push([o.t, o.uid, o.name]); r.events.push(o); break;
         case "deleted": ent(o.id).deletedAt = o.t; break;
@@ -393,7 +405,8 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
     for (const i of r.idle) if (i[1] === null) i[1] = r.duration;
     r.perf.sort((a, b) => a.t - b.t);
     r.spikes.sort((a, b) => a.t - b.t);
-    for (const m of r.markers.values()) m.states.sort((a, b) => a[0] - b[0]);
+    for (const m of r.markers.values()) m.states.sort((a, b) => a.t - b.t);
+    for (const c of r.coverMaps.values()) c.states.sort((a, b) => a.t - b.t);
     // ORBAT node index. TMF node ids are unique across the whole tree, so one map covers every team.
     r.nodes = new Map();
     if (r.orbat && Array.isArray(r.orbat.teams)) {
@@ -461,6 +474,12 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
     return s;
   }
   const lastOf = (arr, time) => { const i = idx(arr, time); return i < 0 ? null : arr[i]; };
+  // Same for lists of { t, ... } objects.
+  function lastAt(arr, time) {
+    let lo = 0, hi = arr.length - 1, ans = null;
+    while (lo <= hi) { const m = (lo + hi) >> 1; if (arr[m].t <= time) { ans = arr[m]; lo = m + 1; } else hi = m - 1; }
+    return ans;
+  }
   function sideAt(e, time) { const g = lastOf(e.groups, time); return g ? g[2] : e.side; }
   function groupAt(e, time) { const g = lastOf(e.groups, time); return g ? g[1] : e.group; }
   function nameAt(e, time) {
@@ -479,10 +498,12 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
   }
   const sideColor = s => ({ WEST: C.west, EAST: C.east, GUER: C.guer, CIV: C.civ })[s] || C["ink-soft"];
   // Arma marker colour classes; anything unknown is drawn in the soft ink colour.
-  const MARKER_COLORS = { ColorBLUFOR: "west", ColorWEST: "west", ColorBlue: "west", ColorOPFOR: "east", ColorEAST: "east", ColorRed: "east",
-    ColorIndependent: "guer", ColorGUER: "guer", ColorGreen: "guer", ColorCivilian: "civ", ColorCIV: "civ", ColorPink: "civ", ColorBlack: "ink",
-    ColorOrange: "accent", ColorYellow: "accent" };
-  const markerColor = c => C[MARKER_COLORS[c] || "ink-soft"];
+  // Side colours follow the page theme; the rest are Arma's own CfgMarkerColors values.
+  const MARKER_COLORS = { ColorBLUFOR: "west", ColorWEST: "west", ColorOPFOR: "east", ColorEAST: "east",
+    ColorIndependent: "guer", ColorGUER: "guer", ColorCivilian: "civ", ColorCIV: "civ", ColorBlack: "ink", Default: "ink" };
+  const MARKER_RGB = { ColorRed: "#e60000", ColorBlue: "#0000e6", ColorGreen: "#00cc00", ColorYellow: "#d9d900", ColorOrange: "#d96600", ColorBrown: "#804000",
+    ColorKhaki: "#809966", ColorPink: "#ff4d66", ColorWhite: "#ffffff", ColorGrey: "#808080", ColorUNKNOWN: "#b39900" };
+  const markerColor = c => MARKER_RGB[c] || C[MARKER_COLORS[c] || "ink-soft"];
   const sideName = s => ({ WEST: "BLUFOR", EAST: "OPFOR", GUER: "Independent", CIV: "Civilian" })[s] || s;
 
   // ---------- formatting ----------
@@ -687,6 +708,110 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
     $("tilenote").textContent = rec && tiles.width && tileStats.failed > 5 && tileStats.ok === 0 ? "No map tiles for " + tiles.world : "";
   }, 1000);
 
+  // ---------- map markers ----------
+  // A marker's state at time t, or null when it is gone or hidden (alpha 0 is how missions hide area markers).
+  function markerAt(m, time) {
+    if (m.deletedAt !== undefined && time >= m.deletedAt) return null;
+    const st = lastAt(m.states, time);
+    return st && st.pos && st.alpha > 0 ? st : null;
+  }
+  // Fill pattern for a hatched brush, in the marker's colour.
+  const hatchCache = new Map();
+  function hatch(ctx, brush, col) {
+    const k = brush + col;
+    if (hatchCache.has(k)) return hatchCache.get(k);
+    const b = brush.replace(/^tmf_?/i, "").replace(/Border$/, "");
+    const c = document.createElement("canvas"); c.width = c.height = 10;
+    const g = c.getContext("2d"); g.strokeStyle = col; g.lineWidth = 1.2; g.beginPath();
+    if (/^(Horizontal|Grid|Cross)$/.test(b)) { g.moveTo(0, 5); g.lineTo(10, 5); }
+    if (/^(Vertical|Grid|Cross)$/.test(b)) { g.moveTo(5, 0); g.lineTo(5, 10); }
+    if (/^(FDiagonal|DiagGrid|Cross)$/.test(b)) { g.moveTo(0, 10); g.lineTo(10, 0); g.moveTo(-5, 5); g.lineTo(5, -5); g.moveTo(5, 15); g.lineTo(15, 5); }
+    if (/^(BDiagonal|DiagGrid)$/.test(b)) { g.moveTo(0, 0); g.lineTo(10, 10); g.moveTo(-5, 5); g.lineTo(5, 15); g.moveTo(5, -5); g.lineTo(15, 5); }
+    g.stroke();
+    const pat = ctx.createPattern(c, "repeat"); hatchCache.set(k, pat); return pat;
+  }
+  // Path of a rectangle or ellipse area: half-sizes a, b in metres, rotated clockwise by dir degrees.
+  function areaPath(ctx, pos, a, b, dir, rect) {
+    const [sx, sy] = toScreen(pos[0], pos[1]), rad = (dir || 0) * Math.PI / 180;
+    const ax = a * view.scale, by = b * view.scale;
+    ctx.save(); ctx.translate(sx, sy); ctx.rotate(rad);
+    if (rect) ctx.rect(-ax, -by, ax * 2, by * 2); else ctx.ellipse(0, 0, Math.max(ax, .5), Math.max(by, .5), 0, 0, Math.PI * 2);
+    ctx.restore();
+  }
+  // A marker's text, or its name when a mission maker named it (player markers are all "_USER_DEFINED ...").
+  const markerLabel = o => o.text || (o.marker && !/^_USER_DEFINED/.test(o.marker) ? o.marker : "");
+  function drawMarkerAreas(ctx) {
+    for (const m of rec.markers.values()) {
+      const st = markerAt(m, t); if (!st) continue;
+      const col = markerColor(st.color);
+      if (st.shape === "POLYLINE" && Array.isArray(st.line) && st.line.length >= 4) {
+        ctx.globalAlpha = st.alpha; ctx.strokeStyle = col; ctx.lineWidth = 2; ctx.lineJoin = ctx.lineCap = "round";
+        ctx.beginPath();
+        for (let i = 0; i + 1 < st.line.length; i += 2) { const [x, y] = toScreen(st.line[i], st.line[i + 1]); i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); }
+        ctx.stroke(); ctx.globalAlpha = 1; continue;
+      }
+      if (st.shape !== "RECTANGLE" && st.shape !== "ELLIPSE") continue;
+      const [a, b] = st.size || [1, 1], brush = st.brush || "Solid";
+      ctx.beginPath(); areaPath(ctx, st.pos, a, b, st.dir, st.shape === "RECTANGLE");
+      if (brush !== "Border") {
+        ctx.globalAlpha = st.alpha * (brush === "SolidFull" ? .8 : /^Solid/.test(brush) ? .4 : .9);
+        ctx.fillStyle = /^Solid/.test(brush) ? col : hatch(ctx, brush, col); ctx.fill();
+      }
+      if (/Border$/.test(brush)) { ctx.globalAlpha = st.alpha; ctx.strokeStyle = col; ctx.lineWidth = 1.5; ctx.stroke(); }
+      ctx.globalAlpha = 1;
+    }
+  }
+  // Icon markers as simple shapes: the common hd_ / mil_ types get their own outline, NATO
+  // symbols a frame, and anything else a diamond. "Empty" markers are text only.
+  function markerIcon(ctx, type, sx, sy, r, dir, col) {
+    const k = String(type || "").toLowerCase().replace(/^(hd|mil)_/, "");
+    ctx.fillStyle = col; ctx.strokeStyle = col; ctx.lineWidth = 2;
+    const poly = (pts, fill) => { ctx.beginPath(); pts.forEach(([x, y], i) => i ? ctx.lineTo(sx + x * r, sy + y * r) : ctx.moveTo(sx + x * r, sy + y * r)); ctx.closePath(); fill ? ctx.fill() : ctx.stroke(); };
+    if (k === "empty") return false;
+    if (/^dot|^circle$/.test(k)) { ctx.beginPath(); ctx.arc(sx, sy, r * (k === "circle" ? .8 : .45), 0, Math.PI * 2); k === "circle" ? ctx.stroke() : ctx.fill(); }
+    else if (/^arrow|^ambush/.test(k)) {
+      ctx.save(); ctx.translate(sx, sy); ctx.rotate((dir || 0) * Math.PI / 180); ctx.translate(-sx, -sy);
+      poly([[0, -1.3], [.75, -.2], [.28, -.2], [.28, 1], [-.28, 1], [-.28, -.2], [-.75, -.2]], true); ctx.restore();
+    }
+    else if (/^(destroy|end)$/.test(k)) { ctx.beginPath(); ctx.moveTo(sx - r * .8, sy - r * .8); ctx.lineTo(sx + r * .8, sy + r * .8); ctx.moveTo(sx + r * .8, sy - r * .8); ctx.lineTo(sx - r * .8, sy + r * .8); ctx.stroke(); }
+    else if (k === "flag") { ctx.beginPath(); ctx.moveTo(sx - r * .5, sy + r); ctx.lineTo(sx - r * .5, sy - r); ctx.stroke(); poly([[-.5, -1], [.8, -.6], [-.5, -.2]], true); }
+    else if (/^(warning|triangle)$/.test(k)) poly([[0, -1], [.95, .75], [-.95, .75]], false);
+    else if (/^(box|start|join)$/.test(k)) poly([[-.75, -.75], [.75, -.75], [.75, .75], [-.75, .75]], false);
+    else if (/^(objective|marker)$/.test(k)) { ctx.beginPath(); ctx.arc(sx, sy, r * .8, 0, Math.PI * 2); ctx.stroke(); ctx.beginPath(); ctx.arc(sx, sy, r * .3, 0, Math.PI * 2); ctx.fill(); }
+    else if (/^pickup|^unknown$/.test(k)) { ctx.beginPath(); ctx.arc(sx, sy, r * .8, 0, Math.PI * 2); ctx.stroke(); ctx.font = "700 " + Math.round(r * 1.3) + "px sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText(k === "unknown" ? "?" : "P", sx, sy + .5); }
+    else if (/^[bonu]_/.test(k)) { ctx.strokeRect(sx - r, sy - r * .7, r * 2, r * 1.4); }
+    else poly([[0, -1], [1, 0], [0, 1], [-1, 0]], true);
+    return true;
+  }
+  function drawMarkerIcons(ctx) {
+    const font = getComputedStyle(document.body).getPropertyValue("--font-ui");
+    for (const m of rec.markers.values()) {
+      const st = markerAt(m, t); if (!st || (st.shape && st.shape !== "ICON")) continue;
+      const [sx, sy] = toScreen(st.pos[0], st.pos[1]);
+      const r = 6 * Math.min(3, Math.max(.5, (st.size && st.size[0]) || 1));
+      ctx.globalAlpha = st.alpha;
+      const icon = markerIcon(ctx, st.type, sx, sy, r, st.dir, markerColor(st.color));
+      if (st.text) {
+        ctx.font = "600 12px " + font; ctx.textAlign = icon ? "left" : "center"; ctx.textBaseline = "middle";
+        const x = icon ? sx + r + 4 : sx;
+        ctx.lineWidth = 3; ctx.strokeStyle = C.ground; ctx.strokeText(st.text, x, sy);
+        ctx.fillStyle = C.ink; ctx.fillText(st.text, x, sy);
+      }
+      ctx.globalAlpha = 1;
+    }
+  }
+  // Cover Map module: shade the map outside its area, like the in-game effect.
+  function drawCoverMaps(ctx) {
+    for (const c of rec.coverMaps.values()) {
+      const st = lastAt(c.states, t); if (!st || st.removed || !st.pos || !st.area) continue;
+      const [a, b, dir] = st.area;
+      ctx.beginPath(); ctx.rect(-1, -1, W + 2, H + 2); areaPath(ctx, st.pos, a, b, dir, true);
+      ctx.fillStyle = "#000"; ctx.globalAlpha = .35; ctx.fill("evenodd"); ctx.globalAlpha = 1;
+      ctx.beginPath(); areaPath(ctx, st.pos, a, b, dir, true);
+      ctx.strokeStyle = C.ink; ctx.lineWidth = 1.5; ctx.setLineDash([8, 5]); ctx.stroke(); ctx.setLineDash([]);
+    }
+  }
+
   let drawn = [];   // [id, sx, sy] for picking
   function drawMap() {
     const ctx = mctx;
@@ -696,6 +821,8 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
     if (follow && selected) { const e = rec.entities.get(selected), s = e && stateAt(e, t); if (s) { view.cx = s.x; view.cy = s.y; } }
     drawTiles();
     drawGrid();
+    drawMarkerAreas(ctx);
+    drawCoverMaps(ctx);
 
     // kill sites
     for (const k of rec.kills) {
@@ -715,21 +842,8 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
       ctx.beginPath(); ctx.moveTo(sx - 5, sy - 5); ctx.lineTo(sx + 5, sy + 5); ctx.stroke();
     }
 
-    // map markers
-    ctx.font = "600 12px " + getComputedStyle(document.body).getPropertyValue("--font-ui");
-    for (const m of rec.markers.values()) {
-      if (m.deletedAt !== undefined && t >= m.deletedAt) continue;
-      const st = lastOf(m.states, t); if (!st || !st[1]) continue;
-      const [sx, sy] = toScreen(st[1][0], st[1][1]);
-      const col = markerColor(st[3]);
-      ctx.fillStyle = col; ctx.strokeStyle = C.ground; ctx.lineWidth = 1.5;
-      ctx.beginPath(); ctx.moveTo(sx, sy - 6); ctx.lineTo(sx + 6, sy); ctx.lineTo(sx, sy + 6); ctx.lineTo(sx - 6, sy); ctx.closePath(); ctx.fill(); ctx.stroke();
-      if (st[2]) {
-        ctx.textAlign = "left"; ctx.textBaseline = "middle";
-        ctx.lineWidth = 3; ctx.strokeStyle = C.ground; ctx.strokeText(st[2], sx + 9, sy);
-        ctx.fillStyle = C.ink; ctx.fillText(st[2], sx + 9, sy);
-      }
-    }
+    // map markers (icons and their text; areas and lines are drawn under the units, above)
+    drawMarkerIcons(ctx);
 
     // tracers
     ctx.lineCap = "round";
@@ -1070,9 +1184,9 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
       case "player": return ["players", o.uid ? '<span class="who">' + esc(o.name) + "</span> took control of " + who(o.unit, o.t - 0.001) : who(o.unit, o.t) + " is now AI"];
       case "group": return ["players", who(o.unit, o.t) + " joined " + esc(o.group) + (o.group_short ? ' <span class="tag">' + esc(o.group_short) + "</span>" : "") + ' <span class="tag">' + esc(sideName(o.side)) + "</span>"];
       case "respawn": return ["players", who(o.new, o.t) + " respawned"];
-      case "marker_created": return ["markers", "Marker placed" + (o.text ? ": " + esc(o.text) : "") + (o.pos ? ' <span class="tag">' + grid(o.pos[0], o.pos[1]) + "</span>" : "")];
-      case "marker_updated": return ["markers", "Marker moved" + (o.text ? ": " + esc(o.text) : "")];
-      case "marker_deleted": { const m = rec.markers.get(o.marker), st = m && lastOf(m.states, o.t); return ["markers", "Marker removed" + (st && st[2] ? ": " + esc(st[2]) : "") + (o.by ? " by " + who(o.by, o.t) : "")]; }
+      case "marker_created": return ["markers", "Marker placed" + (markerLabel(o) ? ": " + esc(markerLabel(o)) : "") + (o.pos ? ' <span class="tag">' + grid(o.pos[0], o.pos[1]) + "</span>" : "")];
+      case "marker_updated": return ["markers", (o.moved || o.shape === undefined ? "Marker moved" : "Marker changed") + (markerLabel(o) ? ": " + esc(markerLabel(o)) : "")];
+      case "marker_deleted": { const m = rec.markers.get(o.marker), st = m && lastAt(m.states, o.t); return ["markers", "Marker removed" + (st && st.text ? ": " + esc(st.text) : "") + (o.by ? " by " + who(o.by, o.t) : "")]; }
       case "end": return [null, '<span class="k">Mission ended</span> <span class="tag">' + esc(o.reason) + "</span>"];
     }
     // A record type this page does not know: show its fields as they are.

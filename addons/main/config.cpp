@@ -38,6 +38,8 @@ class CfgFunctions {
             class radio {};
             class radioClient { headerType = -1; };  // sent to clients as code, so no function header
             class radioNets {};
+            class markerFields {};
+            class coverMap {};
             class stop {};
         };
     };
