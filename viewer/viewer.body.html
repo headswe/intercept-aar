@@ -195,8 +195,10 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
       <div class="scale" id="scale"><i></i><span></span> <em id="tilenote"></em></div>
       <div class="card" id="card" hidden></div>
       <form class="layers" id="layers" hidden onsubmit="return false">
-        <h2>Map background</h2>
-        <label class="check"><input type="checkbox" id="tl-on"> Show map tiles</label>
+        <h2>Map layers</h2>
+        <label class="check"><input type="checkbox" id="sh-groups"> Group markers</label>
+        <label class="check"><input type="checkbox" id="sh-events"> Events on the map</label>
+        <label class="check"><input type="checkbox" id="tl-on"> Map tiles</label>
         <label>Tile URL <input id="tl-url" spellcheck="false"></label>
         <div class="two">
           <label>World <input id="tl-world" spellcheck="false"></label>
@@ -267,10 +269,19 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
   const KNOWN = new Set(["end", "group", "player", "shot", "proj_hit", "proj_splash", "killed", "hit", "loadout", "perf_spike", "idle", "building",
     "marker_created", "marker_updated", "marker_deleted", "get_in", "get_out", "seat", "respawn", "connected", "disconnected", "combat_mode", "enemy_detected", "fleeing"]);
 
+  // AI group state from combat_mode / enemy_detected / fleeing, keyed by side and group name.
+  const groupKey = (side, name) => side + "|" + name;
+  function groupInfo(r, side, name) {
+    const k = groupKey(side, name);
+    let g = r.groupInfo.get(k);
+    if (!g) { g = { modes: [], flee: [], leaders: [] }; r.groupInfo.set(k, g); }
+    return g;
+  }
+
   // ---------- parsing ----------
   function parse(text, label) {
     const r = { header: {}, end: null, entities: new Map(), shots: new Map(), hits: [], kills: [], events: [], duration: 0, label,
-      counts: new Map(), raw: new Map(), orbat: null, perf: [], spikes: [], idle: [], markers: new Map(), buildings: [], damage: [] };
+      counts: new Map(), raw: new Map(), orbat: null, perf: [], spikes: [], idle: [], markers: new Map(), buildings: [], damage: [], groupInfo: new Map(), detections: [] };
     const ent = id => {
       let e = r.entities.get(id);
       if (!e) { e = { id, kind: "unit", name: "#" + id, side: "UNKNOWN", group: "", display: "", cls: "", player: false, states: [], groups: [], players: [], orbats: [], shots: 0, kills: 0, info: {} }; r.entities.set(id, e); }
@@ -311,6 +322,14 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
         case "perf_spike": r.spikes.push(o); r.events.push(o); break;
         case "idle": if (o.idle) r.idle.push([o.t, null]); else if (r.idle.length && r.idle.at(-1)[1] === null) r.idle.at(-1)[1] = o.t; r.events.push(o); break;
         case "building": r.buildings.push(o); r.events.push(o); break;
+        case "combat_mode": case "enemy_detected": case "fleeing": {
+          const g = groupInfo(r, o.side, o.group);
+          if (o.leader) g.leaders.push([o.t, o.leader]);
+          if (o.type === "combat_mode") g.modes.push([o.t, o.mode]);
+          else if (o.type === "fleeing") g.flee.push([o.t, !!o.fleeing]);
+          else r.detections.push(o);
+          r.events.push(o); break;
+        }
         case "marker_created": case "marker_updated": case "marker_deleted": {
           let m = r.markers.get(o.marker);
           if (!m) { m = { states: [], deletedAt: undefined }; r.markers.set(o.marker, m); }
@@ -503,7 +522,9 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
   const WORLD_SIZES = { altis: 30720, stratis: 8192, tanoa: 15360, malden: 12800, enoch: 12800, vr: 8192 };
   const tiles = { on: true, url: "https://mission-db.1tac.eu/tiles/{world}/tiles/{z}/{x}/{y}.png", maxZoom: 10, tms: false, world: "", size: 0 };
   try { Object.assign(tiles, JSON.parse(localStorage.getItem("aar-tiles") || "{}")); } catch {}
-  const saveTiles = () => { try { localStorage.setItem("aar-tiles", JSON.stringify({ on: tiles.on, url: tiles.url, maxZoom: tiles.maxZoom, tms: tiles.tms })); } catch {} };
+  const show = { groups: true, events: true };
+  try { Object.assign(show, JSON.parse(localStorage.getItem("aar-show") || "{}")); } catch {}
+  const saveTiles = () => { try { localStorage.setItem("aar-tiles", JSON.stringify({ on: tiles.on, url: tiles.url, maxZoom: tiles.maxZoom, tms: tiles.tms })); localStorage.setItem("aar-show", JSON.stringify(show)); } catch {} };
   const tileCache = new Map();
   let tileStats = { ok: 0, failed: 0 }, lastTile = "";
   function tileAt(z, x, y) {
@@ -548,11 +569,13 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
     ctx.restore();
   }
   function syncTilesForm() {
+    $("sh-groups").checked = show.groups; $("sh-events").checked = show.events;
     $("tl-on").checked = tiles.on; $("tl-url").value = tiles.url; $("tl-world").value = tiles.world;
     $("tl-size").value = tiles.size || ""; $("tl-max").value = tiles.maxZoom; $("tl-tms").value = tiles.tms ? "1" : "0";
   }
   $("zlayers").onclick = () => { const open = $("layers").hidden; $("layers").hidden = !open; $("zlayers").setAttribute("aria-expanded", open); if (open) syncTilesForm(); };
   $("layers").addEventListener("input", () => {
+    show.groups = $("sh-groups").checked; show.events = $("sh-events").checked;
     tiles.on = $("tl-on").checked; tiles.url = $("tl-url").value.trim(); tiles.world = $("tl-world").value.trim();
     tiles.size = +$("tl-size").value || 0; tiles.maxZoom = Math.max(0, Math.min(22, Math.round(+$("tl-max").value || 0))); tiles.tms = $("tl-tms").value === "1";
     tileStats = { ok: 0, failed: 0 };
@@ -663,6 +686,9 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
       }
     }
 
+    if (show.groups) drawGroups(ctx, states);
+    if (show.events) drawEvents(ctx);
+
     // hit flashes
     for (const h of rec.hits) {
       if (h.t > t || t - h.t > 0.6) continue;
@@ -670,6 +696,106 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
       const [sx, sy] = toScreen(s.x, s.y);
       ctx.globalAlpha = 1 - (t - h.t) / 0.6; ctx.strokeStyle = C.east; ctx.lineWidth = 2;
       ctx.beginPath(); ctx.arc(sx, sy, 7 + (t - h.t) * 18, 0, Math.PI * 2); ctx.stroke(); ctx.globalAlpha = 1;
+    }
+  }
+
+  // ---------- group markers and map events ----------
+  const MODE_SHORT = { SAFE: "SAFE", AWARE: "AWARE", COMBAT: "COMBAT", STEALTH: "STEALTH", CARELESS: "CARELESS" };
+  function halo(ctx, text, x, y, color) {
+    ctx.lineWidth = 3; ctx.strokeStyle = C.ground; ctx.strokeText(text, x, y);
+    ctx.fillStyle = color || C.ink; ctx.fillText(text, x, y);
+  }
+  // One marker per group with living members on the map: a NATO-style frame above the members' centre,
+  // with the group's name, its AI behaviour and whether it is fleeing.
+  function drawGroups(ctx, states) {
+    const groups = new Map();
+    for (const [e, s] of states) {
+      if (e.kind !== "unit" || !s.alive) continue;
+      const name = groupAt(e, t); if (!name) continue;
+      const side = sideAt(e, t), k = groupKey(side, name);
+      let g = groups.get(k);
+      if (!g) { g = { name, side, x: 0, y: 0, n: 0, player: false, vehicle: 0 }; groups.set(k, g); }
+      g.x += s.x; g.y += s.y; g.n++;
+      if (isPlayerAt(e, t)) g.player = true;
+      if (s.veh) g.vehicle++;
+    }
+    const font = getComputedStyle(document.body);
+    const placed = [];
+    for (const [k, g] of [...groups].sort((a, b) => b[1].y - a[1].y)) {
+      const [cx, cy] = toScreen(g.x / g.n, g.y / g.n);
+      // Stack markers upwards when another group's marker already sits there.
+      let my = cy - 30;
+      while (placed.some(([px, py]) => Math.abs(px - cx) < 110 && Math.abs(py - my) < 26)) my -= 26;
+      placed.push([cx, my]);
+      const info = rec.groupInfo.get(k);
+      const mode = info && lastOf(info.modes, t), flee = info && lastOf(info.flee, t);
+      const col = sideColor(g.side);
+      const W2 = 13, H2 = 9, x = cx, y = my;
+      ctx.strokeStyle = C["ink-soft"]; ctx.lineWidth = 1; ctx.setLineDash([2, 2]);
+      ctx.beginPath(); ctx.moveTo(cx, cy - 8); ctx.lineTo(x, y + H2); ctx.stroke(); ctx.setLineDash([]);
+      ctx.fillStyle = C.panel; ctx.strokeStyle = col; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.rect(x - W2, y - H2, W2 * 2, H2 * 2); ctx.fill(); ctx.stroke();
+      // Infantry cross, plus an oval when most of the group rides in vehicles.
+      ctx.lineWidth = 1.5; ctx.beginPath();
+      ctx.moveTo(x - W2, y - H2); ctx.lineTo(x + W2, y + H2); ctx.moveTo(x + W2, y - H2); ctx.lineTo(x - W2, y + H2); ctx.stroke();
+      if (g.vehicle * 2 > g.n) { ctx.beginPath(); ctx.ellipse(x, y, W2 - 4, H2 - 3, 0, 0, Math.PI * 2); ctx.stroke(); }
+      if (g.player) { ctx.strokeStyle = C.ink; ctx.lineWidth = 1; ctx.strokeRect(x - W2 - 3, y - H2 - 3, W2 * 2 + 6, H2 * 2 + 6); }
+      ctx.textAlign = "left"; ctx.textBaseline = "middle";
+      ctx.font = "600 12px " + font.getPropertyValue("--font-ui");
+      halo(ctx, g.name + " (" + g.n + ")", x + W2 + 6, y - 4, C.ink);
+      const tags = [];
+      if (mode) tags.push(MODE_SHORT[mode[1]] || mode[1]);
+      if (flee && flee[1]) tags.push("FLEEING");
+      if (tags.length) {
+        ctx.font = "600 10px " + font.getPropertyValue("--font-data");
+        const danger = (flee && flee[1]) || (mode && mode[1] === "COMBAT");
+        halo(ctx, tags.join(" · "), x + W2 + 6, y + 9, danger ? C.east : C["ink-soft"]);
+      }
+    }
+  }
+  // Recent events float as short labels at the unit or group they concern, fading out over a few seconds.
+  const EVENT_SECONDS = 4;
+  function eventLabel(o) {
+    switch (o.type) {
+      case "combat_mode": return [o.leader, MODE_SHORT[o.mode] || o.mode, o.mode === "COMBAT"];
+      case "enemy_detected": return [o.leader, "enemy spotted", true];
+      case "fleeing": return [o.leader, o.fleeing ? "fleeing" : "rallied", !!o.fleeing];
+      case "get_in": return [o.unit, "in " + (o.role || "vehicle")];
+      case "get_out": return [o.unit, o.eject ? "ejected" : "got out"];
+      case "seat": return [o.unit, "to " + (o.role || "seat")];
+      case "loadout": return [o.unit, o.role_name || o.role || "loadout"];
+      case "respawn": return [o.new, "respawned"];
+      case "player": return [o.unit, o.uid ? "player: " + o.name : "now AI"];
+      case "group": return [o.unit, "joined " + o.group];
+      case "killed": return [o.victim, "killed", true];
+    }
+    return null;
+  }
+  function drawEvents(ctx) {
+    const font = getComputedStyle(document.body).getPropertyValue("--font-data");
+    // Detection lines from the spotting group's leader to the enemy.
+    for (const o of rec.detections) {
+      if (o.t > t || t - o.t > EVENT_SECONDS) continue;
+      const a = rec.entities.get(o.leader), b = rec.entities.get(o.target);
+      const sa = a && stateAt(a, t), sb = b && stateAt(b, t); if (!sa || !sb) continue;
+      const [ax, ay] = toScreen(sa.x, sa.y), [bx, by] = toScreen(sb.x, sb.y);
+      ctx.globalAlpha = 1 - (t - o.t) / EVENT_SECONDS;
+      ctx.strokeStyle = sideColor(o.side); ctx.lineWidth = 1.5; ctx.setLineDash([6, 4]);
+      ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(bx, by); ctx.stroke(); ctx.setLineDash([]);
+      ctx.beginPath(); ctx.arc(bx, by, 10, 0, Math.PI * 2); ctx.stroke();
+      ctx.globalAlpha = 1;
+    }
+    const i1 = idx(rec.eventTimes, t);
+    const stack = new Map();   // entity id -> labels already drawn there
+    ctx.textAlign = "center"; ctx.textBaseline = "bottom"; ctx.font = "600 11px " + font;
+    for (let i = i1; i >= 0 && t - rec.events[i].t <= EVENT_SECONDS; i--) {
+      const o = rec.events[i], l = eventLabel(o); if (!l || !l[0]) continue;
+      const e = rec.entities.get(l[0]), st = e && stateAt(e, t); if (!st) continue;
+      const n = stack.get(l[0]) || 0; if (n >= 3) continue; stack.set(l[0], n + 1);
+      const [sx, sy] = toScreen(st.x, st.y), age = t - o.t;
+      ctx.globalAlpha = Math.min(1, (EVENT_SECONDS - age) / 1.5);
+      halo(ctx, l[1], sx, sy - 14 - n * 13 - Math.min(age, 1) * 6, l[2] ? C.east : C.ink);
+      ctx.globalAlpha = 1;
     }
   }
 
@@ -693,6 +819,10 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
         tctx.globalAlpha = 1;
         tctx.fillStyle = C.east;
         for (const k of rec.kills) { const x = k.t / D * w; tctx.fillRect(x - 1, 0, 2, 12); }
+        // AI behaviour: a short tick per combat_mode / enemy_detected / fleeing record, below the kill ticks.
+        tctx.fillStyle = C.ink; tctx.globalAlpha = .55;
+        for (const o of rec.events) if (o.type === "combat_mode" || o.type === "enemy_detected" || o.type === "fleeing") tctx.fillRect(o.t / D * w - .5, 12, 1, 6);
+        tctx.globalAlpha = 1;
         tctx.fillStyle = C.accent;
         for (const k of rec.spikes) { const x = k.t / D * w; tctx.fillRect(x - 1, h - 20, 2, 12); }
         tctx.fillStyle = C["ink-soft"]; tctx.font = "10px " + getComputedStyle(document.body).getPropertyValue("--font-data"); tctx.textBaseline = "bottom";
