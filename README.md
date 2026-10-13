@@ -89,9 +89,10 @@ Example:
 
 ## Viewing a recording
 
-Open `viewer/aar-viewer.html` in a browser (it is a single file and needs no server; CI also uploads it as the `aar-viewer` artifact) and drop a `.jsonl` recording on it, or use **Open recording**. Nothing is uploaded anywhere; the file is read in the browser.
+Open the viewer on GitHub Pages (https://headswe.github.io/intercept-aar/, published from `main` by `.github/workflows/pages.yml`; `sample.html` there opens with a made-up recording), or open `viewer/aar-viewer.html` from the repository (a single file that needs no server; CI also uploads it as the `aar-viewer` artifact) and drop a `.jsonl` recording on it, or use **Open recording**. Nothing is uploaded anywhere; the file is read in the browser.
 
 - **Map:** the mission plays back on a gridded map with Arma grid references: units and vehicles with facing, crew counts and players ringed, tracers from `shot` to `proj_end`, hit flashes, kill sites, map markers and destroyed buildings. Click a unit to see its status, TMF role and ORBAT position, and to follow it.
+- **Link to a recording:** `?src=<url>` opens a recording from a web address, if that server allows cross-origin requests.
 - **Map background:** map tiles from a tile server under the units, by default `https://mission-db.1tac.eu/tiles/{world}/tiles/{z}/{x}/{y}.png` with the recording's world name in lower case. The layers button on the map changes the URL, world name, world size, highest zoom and whether tile rows count from the north (XYZ) or south (TMS). The tiles are assumed to cover the square world from 0 to its size in metres, with the whole world in one 256 px tile at zoom 0. Tiles that are missing fall back to a lower zoom, and the settings are remembered in the browser.
 - **Timeline:** shots per second as bars, kills as red ticks, server frame spikes as amber ticks and idle periods shaded. Click or drag to seek. Space plays and pauses, the arrow keys skip 5 s (30 s with Shift), and `[` / `]` change speed.
 - **Events:** every event up to the current time, filterable by kind (kills, hits, vehicles, players, markers, AI, world, shots). Click one to jump to it.

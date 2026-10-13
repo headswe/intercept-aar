@@ -1042,7 +1042,7 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
       "<span><b>" + esc(h.mission || "Unknown mission") + "</b> on " + esc(h.world || "?") + "</span>" +
       (started && !isNaN(started) ? "<span>" + started.toISOString().slice(0, 16).replace("T", " ") + " UTC</span>" : "") +
       "<span>" + fmt(rec.duration) + "</span>" +
-      "<span>" + rec.entities.size + " entities" + (players.size ? ", " + players.size + " players" : "") + "</span>" +
+      "<span>" + rec.entities.size + " entities" + (players.size ? ", " + players.size + (players.size > 1 ? " players" : " player") : "") + "</span>" +
       "<span>" + rec.shots.size + " shots</span><span>" + rec.kills.length + " kills</span>";
     const sides = new Set([...rec.entities.values()].map(e => e.side));
     $("legend").innerHTML = [...sides].filter(s => ["WEST", "EAST", "GUER", "CIV"].includes(s)).sort().map(s =>
@@ -1185,7 +1185,13 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
 
   readColors(); resize();
   const sample = document.getElementById("sample");
-  if (sample) load(sample.textContent, sample.dataset.label || "Example recording");
+  // ?src=<url> opens a recording from a web address (the server must allow cross-origin requests).
+  const src = new URLSearchParams(location.search).get("src");
+  if (src) {
+    $("meta").innerHTML = "<span>Loading " + esc(src) + "…</span>";
+    fetch(src).then(r => { if (!r.ok) throw new Error("HTTP " + r.status); return r.text(); })
+      .then(x => load(x, ""), err => { $("meta").innerHTML = ""; $("error").textContent = "Could not load " + src + ": " + err.message; $("error").hidden = false; });
+  } else if (sample) load(sample.textContent, sample.dataset.label || "Example recording");
   else $("meta").innerHTML = "<span>Open a <b>.jsonl</b> recording from the <b>aar</b> folder, or drop it on the page.</span>";
   requestAnimationFrame(frame);
 })();
