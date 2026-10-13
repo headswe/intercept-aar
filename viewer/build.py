@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Builds the standalone viewer page (aar-viewer.html) from viewer.body.html.
 
-Usage: build.py [recording.jsonl [label]] [--body-only out.html]
+Usage: build.py [recording.jsonl [label]] [--body-only out.html] [--terrains terrains.json]
 With a recording, it is embedded as the example that loads on open.
+With --terrains (from fetch_terrains.py), MissionDB's tile configs are embedded too.
 """
 import html
 import sys
@@ -11,8 +12,13 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 
 
-def build(sample: Path | None, label: str, body_only: bool) -> str:
+def build(sample: Path | None, label: str, body_only: bool, terrains: Path | None = None) -> str:
     body = (HERE / "viewer.body.html").read_text(encoding="utf-8")
+    if terrains:
+        data = terrains.read_text(encoding="utf-8")
+        if "</script" in data.lower():
+            sys.exit("terrains contain </script, refusing to embed")
+        body = body.replace("<!--TERRAINS-->", f'<script type="application/json" id="terrains">{data}</script>')
     block = ""
     if sample:
         data = sample.read_text(encoding="utf-8")
@@ -34,7 +40,10 @@ if __name__ == "__main__":
     out = None
     if body_only:
         i = args.index("--body-only"); out = Path(args[i + 1]); del args[i:i + 2]
+    terrains = None
+    if "--terrains" in args:
+        i = args.index("--terrains"); terrains = Path(args[i + 1]); del args[i:i + 2]
     sample = Path(args[0]) if args else None
     label = args[1] if len(args) > 1 else "Example recording"
-    page = build(sample, label, body_only)
+    page = build(sample, label, body_only, terrains)
     (out or HERE / "aar-viewer.html").write_text(page, encoding="utf-8")
