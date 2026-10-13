@@ -1,0 +1,11 @@
+name = "Arma AAR"
+author = "headswe"
+prefix = "arma_aar"
+mainprefix = "z"
+
+[version]
+major = 0
+minor = 1
+patch = 0
+build = 0
+git_hash = 0
