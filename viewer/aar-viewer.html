@@ -509,18 +509,52 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
   }
 
   // ---------- map tiles ----------
-  // Tiles cover the square world [0, world size] in metres; zoom z splits it into 2^z × 2^z tiles of 256 px.
-  // Missing tiles (sea, or zooms the server does not have) fall back to the nearest parent tile.
+  // MissionDB serves R3-format tiles: <base><slug>/tiles/{z}/{x}/{y}.png, laid out like Leaflet RasterCoords.
+  // At the terrain's native zoom (config maxZoom) one tile pixel is one metre (two with doubleSize), row 0 is
+  // the north edge, and each zoom below halves the resolution. Zooms past native, up to dynamicMaxZoom, are
+  // rendered on request. <base><slug>/config.json gives the size, zoom range and version, and <base>config.json
+  // maps worlds that borrow another terrain's tiles to that slug. Without CORS on the tile host those two reads
+  // fail, so the viewer falls back to the header's world size and the built-in alias table below.
+  // Missing tiles (sea, or slow deep zooms) fall back to the nearest parent tile. ?tiles=<base> overrides the host.
   const WORLD_SIZES = { altis: 30720, stratis: 8192, tanoa: 15360, malden: 12800, enoch: 12800, vr: 8192 };
-  const tiles = { url: "https://mission-db.1tac.eu/tiles/{world}/tiles/{z}/{x}/{y}.png", world: "", size: 0 };
-  // Highest zoom the server has for this world, learnt as tiles load: a zoom where tiles keep failing
-  // while none load caps the zoom one below it.
-  let zoomStats = [], maxZoom = 18;
+  const TILE_ALIASES = { baranowwinter: "baranow", chernarus_summer: "chernarus", gm_weferlingen_winter: "gm_weferlingen_summer",
+    panovowinter: "panovo", staszowwinter: "staszow", tem_chamw: "tem_cham" };
+  const tiles = { base: new URLSearchParams(location.search).get("tiles") || "https://mission-db.1tac.eu/tiles/",
+    world: "", slug: "", width: 0, height: 0, ppm: 1, native: 0, minZoom: 0, maxZoom: 0, version: "", bg: "" };
+  if (!tiles.base.endsWith("/")) tiles.base += "/";
+  // Highest zoom that actually loads, learnt as tiles load: a zoom where tiles keep failing while none
+  // load caps the zoom one below it.
+  let zoomStats = [], zoomCap = 99;
   const tileCache = new Map();
   let tileStats = { ok: 0, failed: 0 };
+  let tileLoad = 0;
+  function setTerrain(world, size, cfg) {
+    const ppm = cfg && +cfg.doubleSize ? 2 : 1;
+    const width = cfg && +cfg.width || size, height = cfg && +cfg.height || width;
+    // RasterCoords picks the native zoom as the smallest one whose tiles cover the whole image.
+    const native = cfg && Number.isFinite(+cfg.maxZoom) ? +cfg.maxZoom : width ? Math.max(0, Math.ceil(Math.log2(Math.max(width, height) * ppm / 256))) : 0;
+    Object.assign(tiles, { world, width, height, ppm, native,
+      slug: (cfg && cfg.name) || TILE_ALIASES[world] || world,
+      minZoom: cfg && Number.isFinite(+cfg.minZoom) ? +cfg.minZoom : 0,
+      maxZoom: cfg ? Math.max(native, +cfg.dynamicMaxZoom || 0) : native,
+      version: cfg && cfg.version ? String(cfg.version) : "", bg: cfg && cfg.bgColor || "" });
+    tileCache.clear(); tileStats = { ok: 0, failed: 0 }; zoomStats = []; zoomCap = 99;
+  }
+  async function loadTerrain(world, size) {
+    // Tiles wait for the config, so no tile is fetched at the wrong zoom or without its version.
+    const token = ++tileLoad;
+    setTerrain("", 0, null);
+    if (!world) return;
+    const get = async u => { const res = await fetch(u); if (!res.ok) throw new Error(res.status); return res.json(); };
+    let slug = TILE_ALIASES[world] || world;
+    try { const map = await get(tiles.base + "config.json"); slug = map[world] || world; } catch {}
+    let cfg = null;
+    try { cfg = { ...await get(tiles.base + encodeURIComponent(slug) + "/config.json"), name: slug }; } catch {}
+    if (token === tileLoad) setTerrain(world, size, cfg);
+  }
   function tileAt(z, x, y) {
-    const row = y;
-    const url = tiles.url.replaceAll("{world}", encodeURIComponent(tiles.world)).replaceAll("{z}", z).replaceAll("{x}", x).replaceAll("{y}", row);
+    let url = tiles.base + encodeURIComponent(tiles.slug) + "/tiles/" + z + "/" + x + "/" + y + ".png";
+    if (tiles.version) url += "?v=" + encodeURIComponent(tiles.version);
     let c = tileCache.get(url);
     if (!c) {
       if (tileCache.size > 3000) tileCache.clear();
@@ -528,30 +562,37 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
       c = { img, ok: null };
       const zs = zoomStats[z] ||= { ok: 0, failed: 0 };
       img.onload = () => { c.ok = true; tileStats.ok++; zs.ok++; };
-      img.onerror = () => { c.ok = false; tileStats.failed++; zs.failed++; if (!zs.ok && zs.failed >= 6 && z > 0) maxZoom = Math.min(maxZoom, z - 1); };
+      img.onerror = () => { c.ok = false; tileStats.failed++; zs.failed++; if (!zs.ok && zs.failed >= 6 && z > tiles.minZoom) zoomCap = Math.min(zoomCap, z - 1); };
       img.src = url;
       tileCache.set(url, c);
     }
     return c;
   }
   function drawTiles() {
-    const ws = tiles.size;
-    if (!ws || !tiles.world) return;
-    const ctx = mctx;
-    const z = Math.max(0, Math.min(maxZoom, Math.ceil(Math.log2(view.scale * ws / 256 * DPR))));
-    const n = 2 ** z, tm = ws / n;
+    if (!tiles.width || !tiles.slug) return;
+    const ctx = mctx, ht = tiles.height;
+    // Pick the zoom whose tile pixels are at least as fine as screen pixels.
+    const want = tiles.native + Math.ceil(Math.log2(view.scale * DPR / tiles.ppm));
+    const z = Math.max(tiles.minZoom, Math.min(tiles.maxZoom, zoomCap, want));
+    const tm = 256 * 2 ** (tiles.native - z) / tiles.ppm;   // metres per tile edge
+    const cols = Math.ceil(tiles.width / tm), rows = Math.ceil(ht / tm);
     const [wx0, wy1] = toWorld(0, 0), [wx1, wy0] = toWorld(W, H);
-    const c0 = Math.max(0, Math.floor(wx0 / tm)), c1 = Math.min(n - 1, Math.floor(wx1 / tm));
-    const r0 = Math.max(0, Math.floor((ws - wy1) / tm)), r1 = Math.min(n - 1, Math.floor((ws - wy0) / tm));
+    const c0 = Math.max(0, Math.floor(wx0 / tm)), c1 = Math.min(cols - 1, Math.floor(wx1 / tm));
+    const r0 = Math.max(0, Math.floor((ht - wy1) / tm)), r1 = Math.min(rows - 1, Math.floor((ht - wy0) / tm));
     if (c1 < c0 || r1 < r0 || (c1 - c0 + 1) * (r1 - r0 + 1) > 600) return;
     const dark = matchMedia("(prefers-color-scheme: dark)").matches && document.documentElement.dataset.theme !== "light" || document.documentElement.dataset.theme === "dark";
     ctx.save();
     if (dark) ctx.filter = "brightness(.62) saturate(.8)";
+    if (tiles.bg && tileStats.ok) {
+      // Terrain background (sea) under the whole world, so missing sea tiles do not leave holes.
+      const [bx0, by0] = toScreen(0, ht), [bx1, by1] = toScreen(tiles.width, 0);
+      ctx.fillStyle = tiles.bg; ctx.fillRect(bx0, by0, bx1 - bx0, by1 - by0);
+    }
     for (let r = r0; r <= r1; r++) for (let c = c0; c <= c1; c++) {
       // Screen box of tile (z, c, r); row 0 is the north edge of the world.
-      const [sx0, sy0] = toScreen(c * tm, ws - r * tm), [sx1, sy1] = toScreen((c + 1) * tm, ws - (r + 1) * tm);
+      const [sx0, sy0] = toScreen(c * tm, ht - r * tm), [sx1, sy1] = toScreen((c + 1) * tm, ht - (r + 1) * tm);
       let zz = z, cc = c, rr = r, t = tileAt(zz, cc, rr);
-      while (!t.ok && zz > 0 && z - zz < 6) { zz--; cc >>= 1; rr >>= 1; t = tileAt(zz, cc, rr); }
+      while (!t.ok && zz > tiles.minZoom && z - zz < 6) { zz--; cc >>= 1; rr >>= 1; t = tileAt(zz, cc, rr); }
       if (!t.ok) continue;
       if (zz === z) { ctx.drawImage(t.img, sx0 - .25, sy0 - .25, sx1 - sx0 + .5, sy1 - sy0 + .5); continue; }
       // Draw the part of the parent tile that covers this one.
@@ -561,7 +602,7 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
     ctx.restore();
   }
   setInterval(() => {
-    $("tilenote").textContent = rec && tiles.size && tileStats.failed > 5 && tileStats.ok === 0 ? "No map tiles for " + tiles.world : "";
+    $("tilenote").textContent = rec && tiles.width && tileStats.failed > 5 && tileStats.ok === 0 ? "No map tiles for " + tiles.world : "";
   }, 1000);
 
   let drawn = [];   // [id, sx, sy] for picking
@@ -1232,9 +1273,8 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
       const r = parse(text, label);
       r.eventTimes = r.events.map(e => [e.t]);
       r.perfTimes = r.perf.map(p => [p.t]);
-      tiles.world = String(r.header.world || "").toLowerCase();
-      tiles.size = +r.header.world_size || WORLD_SIZES[tiles.world] || 0;
-      tileStats = { ok: 0, failed: 0 }; zoomStats = []; maxZoom = 18;
+      const world = String(r.header.world || "").toLowerCase();
+      loadTerrain(world, +r.header.world_size || WORLD_SIZES[world] || 0);
       rec = r; t = 0; selected = 0; follow = false; playing = false; setPlayIcon();
       $("error").hidden = true;
       unitMode = r.orbat ? "orbat" : "groups"; $("unitmode").hidden = !r.orbat; setUnitMode(unitMode);
