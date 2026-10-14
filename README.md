@@ -40,6 +40,8 @@ The GitHub Actions workflow in `.github/workflows/build.yml` does the same on ev
 
 Files go to `<Arma working directory>/aar/` by default, or to the folder in the `AAR_OUTPUT_DIR` environment variable. One file per mission, named `YYYYMMDD-HHMMSS_<mission>_<world>.jsonl` (UTC).
 
+The server `.rpt` log says where each recording went: look for `[AAR] recording to <path>`. If it says `Call extension 'arma_aar' could not be loaded` instead, nothing is recorded; on Linux check that `arma_aar_x64.so` sits next to `addons/` in the mod folder, and run `ldd arma_aar_x64.so` to see what it is missing. The CI build needs glibc 2.31 or newer (Ubuntu 20.04, Debian 11 or newer).
+
 Every line is a JSON object with `type` and `t` (mission time in seconds, from `time`). Positions are `[x, y, z]` ASL in metres. Entities are referred to by a numeric id that is stable for the whole recording; `0` means "none or unknown".
 
 | type | fields |
