@@ -38,8 +38,9 @@ if (aar_tmf && aar_logRadio && {(getMissionConfigValue ["TMF_AcreNetworkEnabled"
 
 private _result = "arma_aar" callExtension ["open", [missionName, worldName]];
 _result params ["_output", "_code"];
-if (_output isEqualTo "" && _code == 0) exitWith {
-    diag_log "[AAR] arma_aar extension did not load (is it whitelisted, or BattlEye off?)";
+// A failed load returns no output; the code is 0 on some versions and an error code on others.
+if (_output isEqualTo "") exitWith {
+    diag_log format ["[AAR] arma_aar extension did not load (code %1). Is arma_aar_x64.dll / arma_aar_x64.so in the mod folder, and BattlEye off?", _code];
 };
 if (_code != 0) exitWith { diag_log format ["[AAR] %1", _output] };
 (parseSimpleArray _output) params ["_path", "_startedUtc"];
