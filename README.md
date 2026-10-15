@@ -126,7 +126,7 @@ class AAR {
     frameBudget = 2;        // ms of recorder work per frame; snapshots are spread over frames to stay near it
     spikeThreshold = 100;   // ms; server frames slower than this get a perf_spike record and an RPT line
     pauseWhenEmpty = 1;     // dedicated server: no snapshots while no players are connected
-    logAI = 1;              // combat_mode / enemy_detected / fleeing for AI groups
+    logAI = 1;              // combat_mode / enemy_detected / fleeing for AI groups, on the server, headless clients and player-led groups
     enemyDetectedCooldown = 120; // seconds before a group re-detecting the same target is logged again; 0 = every time
     logRadio = 1;           // radio_tx / radios / radio_nets with ACRE2 or TFAR
 };
@@ -193,7 +193,7 @@ Before settling on this design we read OCAP2, R3 and Anrop's AAR addon. This one
 
 ## Known limitations
 
-- AI awareness records (`combat_mode`, `enemy_detected`, `fleeing`) come from group event handlers, which fire where the group is local. They cover AI the server runs, not groups on a headless client or led by a player. The wiki doesn't document this locality, so it is an assumption to check in-game.
+- AI awareness records (`combat_mode`, `enemy_detected`, `fleeing`) come from group event handlers, which fire where the group is local. The server covers its own groups and sends every other machine (players and headless clients) `fn_groupClient.sqf`, which adds the same handlers to the groups local there (checked every 5 s) and reports to `aar_fnc_groupEvent`; a mission with its own `CfgRemoteExec` in whitelist mode needs `class aar_fnc_groupEvent { allowedTargets = 2; };`. `combat_mode` is only written when the behaviour changed, so a group moving between machines is not logged twice. The wiki doesn't document this locality, so it is an assumption to check in-game.
 
 - `logProjectiles` writes two or three lines per round. Large firefights produce big files and cost some server FPS in SQF; turn it off if you only need movement and kills.
 - Bullet impacts on terrain and buildings are not logged as hits, only as the `proj_end` position.
