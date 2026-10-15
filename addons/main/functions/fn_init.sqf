@@ -66,6 +66,13 @@ aar_batch = 100;        // entities per frame, adjusted to stay within aar_frame
 aar_lastWorkMs = 0;
 aar_idle = false;
 aar_radioOpen = createHashMap;          // "unit radio" -> true while a transmission is open
+// Ammo that only exists as a submunition of another shot (artillery and smoke shells, bomblets).
+aar_subAmmo = createHashMap;
+{
+    private _sub = _x >> "submunitionAmmo";
+    { if (_x isEqualType "" && {_x isNotEqualTo ""}) then { aar_subAmmo set [toLowerANSI _x, true] } }
+        forEach ([getArray _sub, [getText _sub]] select (isText _sub));
+} forEach ("isText (_x >> 'submunitionAmmo') || {isArray (_x >> 'submunitionAmmo')}" configClasses (configFile >> "CfgAmmo"));
 aar_remoteProj = createHashMap;         // "client owner:client projectile id" -> projectile id, see aar_fnc_projectileReport
 aar_radioNetsPending = aar_tmfNets isNotEqualTo [];  // radio_nets is written once TMF built its presets
 
