@@ -2,7 +2,7 @@
  * Advances the snapshot in progress (aar_snap, started by aar_fnc_frame) by up to aar_batch
  * entities, so a large mission spreads the work over several frames instead of one spike.
  * When every entity is done, writes the snap record (timed at the snapshot's start) and the
- * deleted records. Also writes group, side and player changes as it goes.
+ * deleted records. Also writes group, side, leader and player changes as it goes.
  *
  * Returns: true when the snapshot is finished <BOOL>
  */
@@ -41,6 +41,14 @@ for "_i" from _index to _end - 1 do {
                     private _fields = ["unit", toJSON _id, "group", toJSON _newGroup, "side", toJSON _newSide];
                     if (aar_tmf) then { _fields append (_obj call aar_fnc_tmfGroupFields) };
                     ["group", _fields] call aar_fnc_rec;
+                };
+                // Group markers sit on the leader, as TMF draws them.
+                if (!isNull group _obj && {leader group _obj isEqualTo _obj}) then {
+                    private _key = _newSide + "|" + _newGroup;
+                    if (aar_leaders getOrDefault [_key, -1] isNotEqualTo _id) then {
+                        aar_leaders set [_key, _id];
+                        ["leader", ["unit", toJSON _id, "group", toJSON _newGroup, "side", toJSON _newSide]] call aar_fnc_rec;
+                    };
                 };
                 if (aar_tmf) then {
                     // TMF gives players their gear after the unit is first seen, and respawns can change it.

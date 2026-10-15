@@ -34,15 +34,15 @@ rec(0, "header", version=1, mission="co12_village_raid", world="Stratis",
     game_version=[2.22, 152948], mods=["TMF", "CBA_A3", "ACE"])
 
 rec(0, "orbat", source="tmf", teams=[
-    {"side": "WEST", "id": 0, "name": "1 PLT", "full_name": "1st Platoon", "icon": "\\z\\tmf\\addons\\orbat\\textures\\b_inf.paa",
-     "modifier": "", "order": 0, "children": [
+    {"side": "WEST", "id": 0, "name": "1 PLT", "full_name": "1st Platoon", "icon": "x\\tmf\\addons\\orbat\\textures\\yellow_inf.paa",
+     "modifier": "x\\tmf\\addons\\orbat\\textures\\modif_3dot.paa", "order": 0, "children": [
          {"id": 1, "name": "PLT HQ", "full_name": "Platoon HQ", "icon": "", "modifier": "", "order": 0, "children": []},
-         {"id": 2, "name": "A", "full_name": "Alpha Squad", "icon": "", "modifier": "", "order": 1, "children": [
+         {"id": 2, "name": "A", "full_name": "Alpha Squad", "icon": "x\\tmf\\addons\\orbat\\textures\\red_inf.paa", "modifier": "x\\tmf\\addons\\orbat\\textures\\modif_dot.paa", "order": 1, "children": [
              {"id": 4, "name": "A1", "full_name": "Alpha 1", "icon": "", "modifier": "", "order": 0, "children": []},
              {"id": 5, "name": "A2", "full_name": "Alpha 2", "icon": "", "modifier": "", "order": 1, "children": []}]},
          {"id": 3, "name": "B", "full_name": "Bravo Squad", "icon": "", "modifier": "", "order": 2, "children": []},
          {"id": 6, "name": "Hunter 1", "full_name": "Hunter 1 (MRAP)", "icon": "", "modifier": "", "order": 3, "children": []}]},
-    {"side": "EAST", "id": 100, "name": "Garrison", "full_name": "Agia Marina Garrison", "icon": "", "modifier": "", "order": 0, "children": []},
+    {"side": "EAST", "id": 100, "name": "Garrison", "full_name": "Agia Marina Garrison", "icon": "x\\tmf\\addons\\orbat\\textures\\red_inf.paa", "modifier": "x\\tmf\\addons\\orbat\\textures\\modif_2dot.paa", "order": 0, "children": []},
 ])
 
 # TMF ACRE2 radio network: the platoon net on the 152s, one 343 channel per squad.
@@ -54,6 +54,10 @@ rec(0, "radio_nets", source="tmf", nets=[
         {"name": "FIRES", "description": "Fire support", "radio": "ACRE_PRC152", "shared": True, "number": 2, "freq": 61.15}]},
 ])
 SHORT = {"PLT HQ": "HQ", "Alpha 1": "A1", "Alpha 2": "A2", "Bravo": "B"}
+# TMF_groupMarker textures: [icon, size]
+TEX = "x\\tmf\\addons\\orbat\\textures\\"
+ICON = {"PLT HQ": (TEX + "yellow_hq.paa", ""), "Alpha 1": (TEX + "red_inf.paa", TEX + "modif_o.paa"),
+        "Alpha 2": (TEX + "red_inf.paa", TEX + "modif_o.paa"), "Bravo": (TEX + "blue_inf.paa", TEX + "modif_dot.paa")}
 CHANNELS = {"PLT HQ": [0, 3], "Alpha 1": [1], "Alpha 2": [1], "Bravo": [2]}
 
 # --- entities -------------------------------------------------------------------------------
@@ -71,8 +75,10 @@ for gi, (gname, node, n) in enumerate(west_groups):
         units[nid] = dict(x=x, y=y, dir=45, alive=True, dmg=0.0, veh=0, side="WEST", group=gname)
         rec(1, "entity", id=nid, kind="unit", **{"class": "B_Soldier_F"}, display="Rifleman", side="WEST",
             name=name if not uid else "AI " + str(nid), group=gname, player=False, uid="", orbat=node,
-            group_short=SHORT[gname], radio_net=0, radio_channels=CHANNELS[gname] + ([0] if k == 0 else []),
+            group_short=SHORT[gname], group_icon=ICON[gname][0], group_size=ICON[gname][1], radio_net=0, radio_channels=CHANNELS[gname] + ([0] if k == 0 else []),
             loadout_faction="blu_f", role=role[0], role_name=role[1])
+        if k == 0:
+            rec(1, "leader", unit=nid, group=gname, side="WEST")
         nid += 1
 car = nid; nid += 1
 units[car] = dict(x=X0 - 40, y=Y0 - 20, dir=45, alive=True, dmg=0.0, veh=0, side="WEST", group="")
@@ -92,6 +98,7 @@ rec(1, "entity", id=static, kind="static", **{"class": "O_HMG_01_high_F"}, displ
 west = [i for i, u in units.items() if u["side"] == "WEST" and i != car]
 
 for g in range(2):
+    rec(1, "leader", unit=east[g * 5], group=f"Garrison {g + 1}", side="EAST")
     rec(1, "combat_mode", group=f"Garrison {g + 1}", side="EAST", leader=east[g * 5], mode="SAFE")
 
 # --- timeline -------------------------------------------------------------------------------
@@ -139,7 +146,7 @@ ev(31, "get_in", vehicle=car, unit=8, role="cargo")
 ev(95, "seat", vehicle=car, unit=8, role="gunner")
 ev(96, "get_out", vehicle=car, unit=6, role="driver")
 ev(150, "get_out", vehicle=car, unit=8, role="gunner", eject=True)
-ev(110, "group", unit=10, group="Alpha 1", side="WEST", orbat=4)
+ev(110, "group", unit=10, group="Alpha 1", side="WEST", orbat=4, group_short="A1", group_icon=ICON["Alpha 1"][0], group_size=ICON["Alpha 1"][1])
 ev(380, "marker_deleted", marker="_USER_DEFINED #2/0/1", by=1)
 ev(300, "building", **{"from": "Land_i_House_Small_02_V1_F", "to": "Land_i_House_Small_02_V1_ruins_F"}, ruin=True, pos=[VX + 40, VY + 15, 12])
 ev(118, "enemy_detected", group="Garrison 1", side="EAST", leader=east[0], target=1)

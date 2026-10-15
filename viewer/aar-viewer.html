@@ -246,7 +246,7 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
     ["shots", "Shots", false],
   ];
   // Record types the parser files somewhere other than the event feed.
-  const NOT_EVENTS = new Set(["header", "entity", "snap", "deleted", "submunition", "proj_end", "orbat", "perf", "radio_tx_end", "radio_nets", "cover_map"]);
+  const NOT_EVENTS = new Set(["header", "entity", "snap", "deleted", "submunition", "proj_end", "orbat", "perf", "radio_tx_end", "radio_nets", "cover_map", "leader"]);
 
   let rec = null;               // parsed recording
   let t = 0, playing = false, speed = 4;
@@ -268,10 +268,16 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
   }
 
   // ---------- parsing ----------
+  // TMF_groupMarker of a group: its short name (group_short) and textures (group_icon, group_size).
+  function groupMarker(r, o) {
+    const k = groupKey(o.side, o.group);
+    if (o.group_short) r.groupShort.set(k, o.group_short);
+    if (o.group_icon) r.groupIcon.set(k, [o.group_icon, o.group_size || ""]);
+  }
   function parse(text, label) {
     const r = { header: {}, end: null, entities: new Map(), shots: new Map(), hits: [], kills: [], events: [], duration: 0, label,
       counts: new Map(), raw: new Map(), orbat: null, perf: [], spikes: [], idle: [], markers: new Map(), coverMaps: new Map(), buildings: [], damage: [], groupInfo: new Map(), detections: [],
-      tx: [], nets: null, groupShort: new Map() };
+      tx: [], nets: null, groupShort: new Map(), groupIcon: new Map() };
     const openTx = new Map();   // "unit|radio id" -> transmission still going
     const closeTx = (k, time) => { const x = openTx.get(k); if (x) { x.t1 = time; openTx.delete(k); } };
     const ent = id => {
@@ -299,7 +305,7 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
           Object.assign(e, { kind: o.kind, cls: o.class, display: o.display || o.class, side: o.side, name: o.name || o.display || o.class, group: o.group || "", player: !!o.player, uid: o.uid || "" });
           e.info = o;
           for (const k of ["role", "role_name", "loadout_faction", "callsign", "orbat_team", "radio_net", "radio_channels"]) if (o[k] !== undefined) e[k] = o[k];
-          if (o.group_short && o.group) r.groupShort.set(groupKey(o.side, o.group), o.group_short);
+          if (o.group) groupMarker(r, o);
           e.groups.push([o.t, o.group || "", o.side]);
           if (o.orbat !== undefined) e.orbats.push([o.t, o.orbat]);
           if (o.player) e.players.push([o.t, o.uid, o.name]);
@@ -311,7 +317,7 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
         case "group": {
           const e = ent(o.unit); e.groups.push([o.t, o.group, o.side]); if (o.orbat !== undefined) e.orbats.push([o.t, o.orbat]);
           for (const k of ["radio_net", "radio_channels"]) if (o[k] !== undefined) e[k] = o[k];
-          if (o.group_short) r.groupShort.set(groupKey(o.side, o.group), o.group_short);
+          groupMarker(r, o);
           r.events.push(o); break;
         }
         case "radio_tx": {
@@ -337,6 +343,7 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
         case "radio_nets": r.nets = Array.isArray(o.nets) ? o.nets : null; break;
         case "loadout": { const e = ent(o.unit); for (const k of ["role", "role_name", "loadout_faction"]) if (o[k] !== undefined) e[k] = o[k]; r.events.push(o); break; }
         case "orbat": r.orbat = o; break;
+        case "leader": groupInfo(r, o.side, o.group).leaders.push([o.t, o.unit]); break;
         case "perf": r.perf.push(o); break;
         case "perf_spike": r.spikes.push(o); r.events.push(o); break;
         case "idle": if (o.idle) r.idle.push([o.t, null]); else if (r.idle.length && r.idle.at(-1)[1] === null) r.idle.at(-1)[1] = o.t; r.events.push(o); break;
@@ -406,6 +413,7 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
     r.perf.sort((a, b) => a.t - b.t);
     r.spikes.sort((a, b) => a.t - b.t);
     for (const m of r.markers.values()) m.states.sort((a, b) => a.t - b.t);
+    for (const g of r.groupInfo.values()) g.leaders.sort((a, b) => a[0] - b[0]);
     for (const c of r.coverMaps.values()) c.states.sort((a, b) => a.t - b.t);
     // ORBAT node index. TMF node ids are unique across the whole tree, so one map covers every team.
     r.nodes = new Map();
@@ -885,21 +893,19 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
       drawVehicle(ctx, sx, sy, s.dir, sideColor(sideAt(e, t)), s.alive, crew.get(e.id) || 0, e.id === selected, e.kind);
       drawn.push([e.id, sx, sy]);
     }
-    const labels = view.scale > 5;
     for (const [e, s] of states) {
       if (e.kind !== "unit" || (s.veh && s.alive)) continue;
       const [sx, sy] = toScreen(s.x, s.y);
       const isP = isPlayerAt(e, t);
       drawUnit(ctx, sx, sy, s.dir, sideColor(sideAt(e, t)), s.alive, isP, e.id === selected);
       drawn.push([e.id, sx, sy]);
-      if ((labels || isP || e.id === selected) && s.alive) {
+      if (e.id === selected && s.alive) {
         ctx.fillStyle = C.ink; ctx.font = "12px " + getComputedStyle(document.body).getPropertyValue("--font-ui");
         ctx.textAlign = "left"; ctx.textBaseline = "middle"; ctx.fillText(nameAt(e, t), sx + 10, sy - 9);
       }
     }
 
-    // Detail follows the zoom: group markers while units crowd together, per-unit labels once they separate.
-    if (view.scale < 3) drawGroups(ctx, states);
+    drawGroups(ctx, states);
     drawEvents(ctx);
     drawRadio(ctx);
 
@@ -911,6 +917,7 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
       ctx.globalAlpha = 1 - (t - h.t) / 0.6; ctx.strokeStyle = C.east; ctx.lineWidth = 2;
       ctx.beginPath(); ctx.arc(sx, sy, 7 + (t - h.t) * 18, 0, Math.PI * 2); ctx.stroke(); ctx.globalAlpha = 1;
     }
+    drawHover(ctx);
   }
 
   // ---------- group markers and map events ----------
@@ -919,120 +926,228 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
     ctx.lineWidth = 3; ctx.strokeStyle = C.ground; ctx.strokeText(text, x, y);
     ctx.fillStyle = color || C.ink; ctx.fillText(text, x, y);
   }
-  // One marker per group with living members on the map: a NATO-style frame above the members' centre,
-  // with the group's name, its AI behaviour and whether it is fleeing.
-  // Group markers merge up the hierarchy as you zoom out: when everything under a TMF ORBAT node fits
-  // within MERGE_PX on screen, the node gets one marker instead of one per group. Groups outside the
-  // ORBAT merge with nearby groups of the same side instead.
-  const MERGE_PX = 90;
+  // ---------- TMF group markers ----------
+  // Same rules as TMF's ORBAT tracker (addons/orbat/functions/fnc_updateArray.sqf, fnc_drawArrayRec.sqf):
+  //  - a group's marker sits on its leader; an ORBAT node sits at the plain mean of its children
+  //    (groups and child nodes count once each, whatever their size);
+  //  - a node with an icon replaces its children with one marker once its furthest group is within
+  //    0.05 screen units of it on screen; a node without an icon always shows its children;
+  //  - a marker's text shows only while its nearest sibling is at least sqrt(0.0014) screen units away;
+  //  - markers keep one size on screen at every zoom.
+  // Arma screen units are about the screen height, taken as 1080 px here.
+  // Groups outside the ORBAT (AI, or a tree keyed by faction) get TMF's spectator fallback: a plain
+  // marker with the group's name. Groups of one side merge by the same distance rule, as if under one node.
+  const TMF_SCREEN = 1080, COLLAPSE_PX = 0.05 * TMF_SCREEN, LABEL_PX = Math.sqrt(0.0014) * TMF_SCREEN;
+  // TMF textures are x\tmf\addons\orbat\textures\<colour>_<symbol>.paa; TMF_groupMarker can also name
+  // any other texture, which is drawn as infantry. The colour is the side's, as in TMF's spectator, which
+  // recolours markers by side when it shows every side (fnc_getGroupMarkerData); the ORBAT tracker keeps
+  // squad colours, but there red Alpha squads would read as OPFOR.
+  function tmfTexture(path) {
+    const f = String(path || "").split(/[\\/]/).pop().toLowerCase().replace(/\.paa$/, "");
+    if (!f || f === "empty") return null;
+    const m = f.match(/^(?:blue|red|green|yellow|orange|purple|gray)(?:_(.+))?$/);
+    return { symbol: m ? m[1] || "blank" : "inf" };
+  }
+  const tmfSize = path => (String(path || "").toLowerCase().match(/modif_(o|dot|2dot|3dot|company)/) || [])[1] || "";
+
+  // A NATO frame with TMF's symbol set, drawn rather than loaded since browsers cannot read .paa.
+  function drawSymbol(ctx, x, y, symbol, fill, size) {
+    const w = 13, h = 9, k = "#151515";
+    ctx.fillStyle = fill; ctx.strokeStyle = k; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.rect(x - w, y - h, w * 2, h * 2); ctx.fill(); ctx.stroke();
+    const s = symbol, has = (...a) => a.some(v => s.includes(v));
+    ctx.beginPath();
+    const line = (a, b, c, d) => { ctx.moveTo(x + a, y + b); ctx.lineTo(x + c, y + d); };
+    if (s.startsWith("inf") || s === "amphi_mech_inf") { line(-w, -h, w, h); line(w, -h, -w, h); }
+    if (s.startsWith("recon")) line(-w, h, w, -h);
+    if (has("motor")) line(0, -h, 0, h);
+    if (has("mg")) { line(0, h - 2, 0, -h + 3); line(-3, -h + 6, 0, -h + 3); line(3, -h + 6, 0, -h + 3); if (has("mg_m", "mg_h")) line(-4, 2, 4, 2); if (s === "mg_h") line(-4, 5, 4, 5); }
+    if (s.startsWith("antitank")) { line(-w, h, 0, -h); line(0, -h, w, h); if (has("rocket")) line(-3, 3, 3, 3); }
+    if (s === "engineer") { line(-6, 3, 6, 3); line(-6, 3, -6, -3); line(0, 3, 0, -3); line(6, 3, 6, -3); line(-6, -3, 6, -3); }
+    if (has("logistics", "service", "transport", "ammo", "ordnance")) line(-w, h - 4, w, h - 4);
+    if (has("signal")) { line(-8, -5, -2, 4); line(-2, 4, 2, -4); line(2, -4, 8, 5); }
+    if (has("uav", "chevrons")) { line(-7, -3, 0, 3); line(0, 3, 7, -3); }
+    if (s === "cross") { line(0, -6, 0, 6); line(-6, 0, 6, 0); }
+    if (has("helo", "rotarywing", "fixedwing")) { line(-8, -5, 8, 5); line(-8, 5, 8, -5); line(-8, -5, -8, 5); line(8, -5, 8, 5); }
+    if (s.startsWith("sl")) { line(-5, 6, -5, -6); line(-5, -6, 5, -3); line(5, -3, -5, 0); }
+    ctx.stroke();
+    if (has("mech", "armor", "arm_", "amphi")) { ctx.beginPath(); ctx.ellipse(x, y, w - 4, h - 4, 0, 0, Math.PI * 2); ctx.stroke(); }
+    if (has("wheeled")) { ctx.beginPath(); ctx.arc(x - 5, y + h - 2.5, 1.5, 0, Math.PI * 2); ctx.arc(x + 5, y + h - 2.5, 1.5, 0, Math.PI * 2); ctx.stroke(); }
+    if (has("para")) { ctx.beginPath(); ctx.arc(x, y + h, 5, Math.PI, 0); ctx.stroke(); }
+    if (has("airmobile")) { ctx.beginPath(); ctx.arc(x, y - h, 5, 0, Math.PI); ctx.stroke(); }
+    if (has("airdef", "spaag")) { ctx.beginPath(); ctx.arc(x, y + h, 8, Math.PI, 0); ctx.stroke(); }
+    if (s === "mortar") { ctx.beginPath(); ctx.arc(x, y + 4, 2.5, 0, Math.PI * 2); line(0, 1.5, 0, -6); line(-3, -3, 0, -6); line(3, -3, 0, -6); ctx.stroke(); }
+    if (s === "artillery") { ctx.fillStyle = k; ctx.beginPath(); ctx.arc(x, y, 3, 0, Math.PI * 2); ctx.fill(); }
+    if (s.startsWith("hq") || s === "sf") {
+      ctx.fillStyle = k; ctx.font = "700 10px " + getComputedStyle(document.body).getPropertyValue("--font-data");
+      ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText(s === "sf" ? "SF" : "HQ", x, y + 0.5);
+    }
+    // Echelon above the frame: Ø team, dots for squad / section / platoon, a bar for a company.
+    if (size) {
+      ctx.fillStyle = k; ctx.strokeStyle = k; ctx.lineWidth = 1.5;
+      const top = y - h - 5, dots = { dot: 1, "2dot": 2, "3dot": 3 }[size];
+      if (dots) for (let i = 0; i < dots; i++) { ctx.beginPath(); ctx.arc(x + (i - (dots - 1) / 2) * 6, top, 2, 0, Math.PI * 2); ctx.fill(); }
+      if (size === "o") { ctx.beginPath(); ctx.arc(x, top, 2.5, 0, Math.PI * 2); ctx.stroke(); }
+      if (size === "company") ctx.fillRect(x - 1, top - 3, 2, 6);
+    }
+  }
+
+  let groupHits = [];   // [sx, sy, marker] for hovering
   function drawGroups(ctx, states) {
+    // Leaves: one per group with living members.
     const groups = new Map();
     for (const [e, s] of states) {
       if (e.kind !== "unit" || !s.alive) continue;
       const name = groupAt(e, t); if (!name) continue;
       const side = sideAt(e, t), k = groupKey(side, name);
       let g = groups.get(k);
-      if (!g) { g = { key: k, name, side, x: 0, y: 0, n: 0, player: false, vehicle: 0, x0: Infinity, y0: Infinity, x1: -Infinity, y1: -Infinity, nodes: new Map() }; groups.set(k, g); }
-      g.x += s.x; g.y += s.y; g.n++;
-      g.x0 = Math.min(g.x0, s.x); g.x1 = Math.max(g.x1, s.x); g.y0 = Math.min(g.y0, s.y); g.y1 = Math.max(g.y1, s.y);
-      if (isPlayerAt(e, t)) g.player = true;
-      if (s.veh) g.vehicle++;
+      if (!g) { g = { key: k, name, side, units: [], x: 0, y: 0, nodes: new Map() }; groups.set(k, g); }
+      g.units.push(e); g.x += s.x; g.y += s.y;
       const o = orbatAt(e, t);
       if (o !== undefined && rec.nodes.has(o)) g.nodes.set(o, (g.nodes.get(o) || 0) + 1);
     }
-    const markers = [];
-    const status = keys => {
-      let combat = false, flee = false, mode = null;
-      for (const k of keys) {
-        const info = rec.groupInfo.get(k); if (!info) continue;
-        const m = lastOf(info.modes, t), f = lastOf(info.flee, t);
-        if (m) { mode = mode && mode !== m[1] ? "mixed" : m[1]; if (m[1] === "COMBAT") combat = true; }
-        if (f && f[1]) flee = true;
-      }
-      return { combat, flee, mode };
+    for (const g of groups.values()) {
+      // On the leader when the recording names one, else at the members' centre.
+      const info = rec.groupInfo.get(g.key), l = info && lastOf(info.leaders, t);
+      const ls = l && g.units.some(e => e.id === l[1]) && stateAt(rec.entities.get(l[1]), t);
+      if (ls) { g.x = ls.x; g.y = ls.y; } else { g.x /= g.units.length; g.y /= g.units.length; }
+    }
+    const leaf = (g, node) => {
+      const own = rec.groupIcon.get(g.key);
+      // No TMF_groupMarker: TMF falls back to the parent node's texture with the group's name.
+      const tex = tmfTexture(own ? own[0] : node && node.icon);
+      return { key: g.key, x: g.x, y: g.y, far: [g.x, g.y], side: g.side, groups: [g], tex, size: own ? tmfSize(own[1]) : "",
+        text: shortName(g.side, g.name) || g.name, title: g.name };
     };
-    const merge = (list, name, side, echelon) => {
-      const m = { name, side, echelon, x: 0, y: 0, n: 0, player: false, vehicle: 0, x0: Infinity, y0: Infinity, x1: -Infinity, y1: -Infinity, keys: [] };
-      for (const g of list) {
-        m.x += g.x; m.y += g.y; m.n += g.n; m.vehicle += g.vehicle; m.player ||= g.player;
-        m.x0 = Math.min(m.x0, g.x0); m.x1 = Math.max(m.x1, g.x1); m.y0 = Math.min(m.y0, g.y0); m.y1 = Math.max(m.y1, g.y1);
-        m.keys.push(...(g.keys || [g.key]));
-      }
-      return m;
+    const mean = (it, kids) => {
+      it.x = kids.reduce((a, k) => a + k.x, 0) / kids.length; it.y = kids.reduce((a, k) => a + k.y, 0) / kids.length;
+      let far = -1;
+      for (const k of kids) for (const p of [[k.x, k.y], k.far]) { const d = Math.hypot(p[0] - it.x, p[1] - it.y); if (d > far) { far = d; it.far = p; } }
+      for (const k of kids) k.sib = Math.min(Infinity, ...kids.filter(o => o !== k).map(o => Math.hypot(o.x - k.x, o.y - k.y)));
+      it.groups = kids.flatMap(k => k.groups);
+      it.side = it.groups[0].side;
+      return it;
     };
-    const span = m => Math.max(m.x1 - m.x0, m.y1 - m.y0) * view.scale;
 
     // ORBAT: groups hang under the node most of their members belong to; groups without one hang
-    // under the root of their side's tree, as in TMF's briefing.
+    // under the root of their side's tree, as in TMF.
     const under = new Map(), loose = [];
     for (const g of groups.values()) {
       let id = null, best = 0;
       for (const [o, c] of g.nodes) if (c > best) { best = c; id = o; }
-      let node = id !== null ? rec.nodes.get(id).node : rec.orbat && rec.orbat.teams.find(tm => tm.side === g.side);
+      const node = id !== null ? rec.nodes.get(id).node : rec.orbat && rec.orbat.teams.find(tm => tm.side === g.side);
       if (!node) { loose.push(g); continue; }
       if (!under.has(node)) under.set(node, []); under.get(node).push(g);
     }
-    if (rec.orbat) {
-      const all = node => [...(under.get(node) || []), ...(node.children || []).flatMap(all)];
-      const place = (node, side, depth) => {
-        const list = all(node); if (!list.length) return;
-        const m = merge(list, node.name || node.full_name || "ORBAT", side, depth);
-        if (list.length > 1 && span(m) < MERGE_PX) { markers.push(m); return; }
-        for (const g of under.get(node) || []) markers.push(merge([g], shortName(g.side, g.name) || g.name, side, 0));
-        for (const c of node.children || []) place(c, side, depth + 1);
-      };
-      for (const team of rec.orbat.teams) place(team, team.side || "", 0);
-    }
-    // Groups outside the ORBAT: merge with any marker of the same side within MERGE_PX on screen.
-    const clusters = [];
-    for (const g of loose.sort((a, b) => b.n - a.n)) {
-      const [gx, gy] = toScreen(g.x / g.n, g.y / g.n);
-      const c = clusters.find(c => c.side === g.side && Math.hypot(c.sx - gx, c.sy - gy) < MERGE_PX * .6 && span(merge([...c.list, g], "", g.side, 0)) < MERGE_PX);
-      if (c) c.list.push(g); else clusters.push({ side: g.side, sx: gx, sy: gy, list: [g] });
-    }
-    for (const c of clusters) markers.push(merge(c.list, (shortName(c.side, c.list[0].name) || c.list[0].name) + (c.list.length > 1 ? " +" + (c.list.length - 1) : ""), c.side, c.list.length > 1 ? 1 : 0));
-
-    const font = getComputedStyle(document.body);
-    const placed = [];
-    for (const m of markers.sort((a, b) => b.y / b.n - a.y / a.n)) {
-      const [cx, cy] = toScreen(m.x / m.n, m.y / m.n);
-      // Stack markers upwards when another marker already sits there, at most three deep;
-      // past that the marker is drawn without its labels so a crowded area stays readable.
-      let my = cy - 30, depth = 0;
-      while (depth < 3 && placed.some(([px, py]) => Math.abs(px - cx) < 110 && Math.abs(py - my) < 26)) { my -= 26; depth++; }
-      const crowded = placed.some(([px, py]) => Math.abs(px - cx) < 110 && Math.abs(py - my) < 26);
-      if (crowded) my = cy - 30;
-      placed.push([cx, my]);
-      const st = status(m.keys);
-      const col = sideColor(m.side);
-      const big = m.keys.length > 1, W2 = big ? 16 : 13, H2 = big ? 11 : 9, x = cx, y = my;
-      ctx.strokeStyle = C["ink-soft"]; ctx.lineWidth = 1; ctx.setLineDash([2, 2]);
-      ctx.beginPath(); ctx.moveTo(cx, cy - 8); ctx.lineTo(x, y + H2); ctx.stroke(); ctx.setLineDash([]);
-      ctx.fillStyle = C.panel; ctx.strokeStyle = col; ctx.lineWidth = 2;
-      ctx.beginPath(); ctx.rect(x - W2, y - H2, W2 * 2, H2 * 2); ctx.fill(); ctx.stroke();
-      // Infantry cross, plus an oval when most of the unit rides in vehicles.
-      ctx.lineWidth = 1.5; ctx.beginPath();
-      ctx.moveTo(x - W2, y - H2); ctx.lineTo(x + W2, y + H2); ctx.moveTo(x + W2, y - H2); ctx.lineTo(x - W2, y + H2); ctx.stroke();
-      if (m.vehicle * 2 > m.n) { ctx.beginPath(); ctx.ellipse(x, y, W2 - 4, H2 - 3, 0, 0, Math.PI * 2); ctx.stroke(); }
-      // Merged markers carry a tick per group above the frame, like an echelon mark.
-      if (big) {
-        ctx.fillStyle = col; const k = Math.min(m.keys.length, 6);
-        for (let i = 0; i < k; i++) ctx.fillRect(x - (k - 1) * 3.5 + i * 7 - 1.5, y - H2 - 7, 3, 4);
+    const build = node => {
+      const kids = [...(under.get(node) || []).map(g => leaf(g, node)), ...(node.children || []).map(build).filter(Boolean)];
+      if (!kids.length) return null;
+      return mean({ kids, tex: tmfTexture(node.icon), size: tmfSize(node.modifier), text: node.name || "", title: node.full_name || node.name || "ORBAT" }, kids);
+    };
+    const roots = rec.orbat ? rec.orbat.teams.map(build).filter(Boolean) : [];
+    // Outside the ORBAT: per side, the closest two markers merge while everything in the merged one
+    // stays within the collapse distance of its centre, as a node with an icon would.
+    const lim = COLLAPSE_PX / view.scale, looseItems = loose.map(g => leaf(g, null));
+    const radius = list => {
+      const x = list.reduce((a, g) => a + g.x, 0) / list.length, y = list.reduce((a, g) => a + g.y, 0) / list.length;
+      return Math.max(...list.map(g => Math.hypot(g.x - x, g.y - y)));
+    };
+    for (const blocked = new Set(); ;) {
+      let best = null, bd = 2 * lim;
+      for (let i = 0; i < looseItems.length; i++) for (let j = i + 1; j < looseItems.length; j++) {
+        const a = looseItems[i], b = looseItems[j];
+        if (a.side !== b.side || blocked.has(a.key + "/" + b.key)) continue;
+        const d = Math.hypot(a.x - b.x, a.y - b.y); if (d < bd) { bd = d; best = [i, j]; }
       }
-      if (m.player) { ctx.strokeStyle = C.ink; ctx.lineWidth = 1; ctx.strokeRect(x - W2 - 3, y - H2 - 3, W2 * 2 + 6, H2 * 2 + 6); }
-      if (crowded) continue;
-      ctx.textAlign = "left"; ctx.textBaseline = "middle";
-      ctx.font = "600 12px " + font.getPropertyValue("--font-ui");
-      halo(ctx, m.name + " (" + m.n + ")", x + W2 + 6, y - 4, C.ink);
+      if (!best) break;
+      const [a, b] = [looseItems[best[0]], looseItems[best[1]]], list = [...a.groups, ...b.groups];
+      if (radius(list) >= lim) { blocked.add(a.key + "/" + b.key); continue; }
+      const kids = list.map(g => leaf(g, null));
+      const m = mean({ kids, tex: null, size: "", text: kids.length + " groups", title: kids.length + " groups" }, kids);
+      m.key = list.map(g => g.key).join("+");
+      looseItems.splice(best[1], 1); looseItems.splice(best[0], 1, m);
+    }
+    for (const it of looseItems) it.sib = Math.min(Infinity, ...looseItems.filter(o => o !== it && o.side === it.side).map(o => Math.hypot(o.x - it.x, o.y - it.y)));
+    for (const it of roots) it.sib = Infinity;
+
+    const out = [];
+    const visit = it => {
+      if (it.kids && (!it.tex || Math.hypot(it.far[0] - it.x, it.far[1] - it.y) * view.scale >= COLLAPSE_PX)) return it.kids.forEach(visit);
+      out.push(it);
+    };
+    roots.forEach(visit);
+    out.push(...looseItems);
+
+    // Zoomed in to where single units are clear, markers fade so the units under them stay visible.
+    const fade = Math.max(0.45, Math.min(1, 1.6 - view.scale / 4));
+    const font = getComputedStyle(document.body).getPropertyValue("--font-ui");
+    groupHits = [];
+    for (const m of out) {
+      const [x, y] = toScreen(m.x, m.y);
+      ctx.globalAlpha = fade;
+      drawSymbol(ctx, x, y, m.tex ? m.tex.symbol : "inf", sideColor(m.side), m.size);
+      if (m.kids && !m.tex) { ctx.strokeStyle = "#151515"; ctx.lineWidth = 1; ctx.strokeRect(x - 16, y - 12, 32, 24); }
+      if (m.sib * view.scale >= LABEL_PX && m.text) {
+        ctx.font = "600 12px " + font; ctx.textAlign = "left"; ctx.textBaseline = "middle";
+        halo(ctx, m.text, x + 17, y, C.ink);
+      }
+      ctx.globalAlpha = 1;
+      groupHits.push([x, y, m]);
+    }
+  }
+
+  // ---------- hover ----------
+  // Names show on hover: a unit's name, or for a group marker who is in it and what it is doing.
+  let hover = null;
+  function tooltip(ctx, x, y, lines) {
+    const font = getComputedStyle(document.body).getPropertyValue("--font-ui");
+    ctx.textAlign = "left"; ctx.textBaseline = "top";
+    const fonts = lines.map((l, i) => (i === 0 ? "600 12px " : "12px ") + font);
+    const w = Math.max(...lines.map((l, i) => { ctx.font = fonts[i]; return ctx.measureText(l[0]).width; })) + 16, h = lines.length * 16 + 10;
+    let bx = x + 14, by = y + 14;
+    if (bx + w > W - 4) bx = x - 14 - w;
+    if (by + h > H - 4) by = Math.max(4, y - 14 - h);
+    ctx.fillStyle = C.panel; ctx.strokeStyle = C.rule; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.roundRect(bx, by, w, h, 4); ctx.fill(); ctx.stroke();
+    lines.forEach((l, i) => { ctx.font = fonts[i]; ctx.fillStyle = l[1] || C.ink; ctx.fillText(l[0], bx + 8, by + 6 + i * 16); });
+  }
+  function drawHover(ctx) {
+    if (!hover || !rec || pointers.size) { map.style.cursor = ""; return; }
+    const [hx, hy] = hover;
+    const g = groupHits.find(([x, y]) => Math.abs(x - hx) <= 14 && Math.abs(y - hy) <= 10);
+    if (g) {
+      const m = g[2], st = { combat: false, flee: false, mode: null };
+      const units = m.groups.flatMap(x => x.units);
+      for (const x of m.groups) {
+        const info = rec.groupInfo.get(x.key); if (!info) continue;
+        const md = lastOf(info.modes, t), f = lastOf(info.flee, t);
+        if (md) { st.mode = st.mode && st.mode !== md[1] ? "mixed" : md[1]; if (md[1] === "COMBAT") st.combat = true; }
+        if (f && f[1]) st.flee = true;
+      }
+      const lines = [[m.title + (m.text && m.text !== m.title ? " (" + m.text + ")" : "")],
+        [sideName(m.side) + " · " + (m.groups.length > 1 ? m.groups.length + " groups · " : "") + units.length + " alive", C["ink-soft"]]];
       const tags = [];
-      if (big && m.keys.length > 1) tags.push(m.keys.length + " groups");
-      if (st.mode && st.mode !== "AWARE" && st.mode !== "mixed") tags.push(MODE_SHORT[st.mode] || st.mode);   // AWARE is the AI default
+      if (st.mode && st.mode !== "AWARE" && st.mode !== "mixed") tags.push(MODE_SHORT[st.mode] || st.mode);
       else if (st.combat) tags.push("IN COMBAT");
       if (st.flee) tags.push("FLEEING");
-      if (tags.length) {
-        ctx.font = "600 10px " + font.getPropertyValue("--font-data");
-        halo(ctx, tags.join(" · "), x + W2 + 6, y + 9, st.flee || st.combat ? C.east : C["ink-soft"]);
-      }
+      if (tags.length) lines.push([tags.join(" · "), C.east]);
+      const players = units.filter(e => isPlayerAt(e, t)).map(e => nameAt(e, t));
+      for (const p of players.slice(0, 10)) lines.push([p]);
+      if (players.length > 10) lines.push(["+" + (players.length - 10) + " more", C["ink-soft"]]);
+      tooltip(ctx, hx, hy, lines);
+      map.style.cursor = "pointer"; return;
+    }
+    let best = 0, bd = 12;
+    for (const [id, sx, sy] of drawn) { const d = Math.hypot(sx - hx, sy - hy); if (d < bd) { bd = d; best = id; } }
+    map.style.cursor = best ? "pointer" : "";
+    if (!best) return;
+    const e = rec.entities.get(best);
+    if (e.kind === "unit") {
+      const grp = groupAt(e, t);
+      tooltip(ctx, hx, hy, [[nameAt(e, t)], [(e.role_name || e.display) + (grp ? " · " + (shortName(sideAt(e, t), grp) || grp) : ""), C["ink-soft"]]]);
+    } else {
+      const crew = [...rec.entities.values()].filter(u => u.kind === "unit" && (stateAt(u, t) || {}).veh === e.id && stateAt(u, t).alive);
+      tooltip(ctx, hx, hy, [[e.callsign || e.display], ...crew.slice(0, 10).map(u => [nameAt(u, t), isPlayerAt(u, t) ? C.ink : C["ink-soft"]])]);
     }
   }
   // Recent events float as short labels at the unit or group they concern, fading out over a few seconds.
@@ -1647,6 +1762,7 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
   const pointers = new Map(); let moved = 0, pinch = 0;
   map.addEventListener("pointerdown", e => { map.setPointerCapture(e.pointerId); pointers.set(e.pointerId, [e.offsetX, e.offsetY]); moved = 0; map.classList.add("dragging"); });
   map.addEventListener("pointermove", e => {
+    hover = e.pointerType === "mouse" ? [e.offsetX, e.offsetY] : null;
     if (!pointers.has(e.pointerId)) return;
     const [px, py] = pointers.get(e.pointerId);
     if (pointers.size === 1) {
@@ -1669,6 +1785,7 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
     }
   };
   map.addEventListener("pointerup", up); map.addEventListener("pointercancel", up);
+  map.addEventListener("pointerleave", () => hover = null);
   map.addEventListener("wheel", e => { e.preventDefault(); zoomAt(Math.exp(-e.deltaY * 0.0015), e.offsetX, e.offsetY); }, { passive: false });
 
   // timeline scrub
