@@ -104,6 +104,12 @@ aar_radioNetsPending = aar_tmfNets isNotEqualTo [];  // radio_nets is written on
 
 if (aar_tmf) then { call aar_fnc_orbat };
 
+if (aar_logAI) then {
+    // Group AI events fire only where the group is local, so players' and headless clients'
+    // machines get the client half as code and report their own groups.
+    [[], aar_fnc_groupClient] remoteExecCall ["call", -2, "aar_groupClient"];
+};
+
 if (aar_logRadio) then {
     // ACRE2 and TFAR raise transmissions only on the speaker's machine, so every machine with a
     // player gets the client half as code (no mod needed there), queued for players joining later.
