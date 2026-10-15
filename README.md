@@ -72,7 +72,7 @@ Every line is a JSON object with `type` and `t` (mission time in seconds, from `
 | `cover_map` | a Cover Map module's uncovered area, at the start and whenever it moves or changes: `id`, `pos`, `area` (`[a, b, angle]` like `triggerArea`), or `removed: true` once the module is gone |
 | `deleted` | `id` when an entity is removed from the world |
 | `combat_mode` | an AI group's behaviour changed (`mode`: `SAFE`, `AWARE`, `COMBAT`, `STEALTH`, `CARELESS`), also written once when the group is first seen: `group`, `side`, `leader` |
-| `enemy_detected` | an AI group detected a new enemy: `group`, `side`, `leader`, `target` |
+| `enemy_detected` | an AI group detected a new enemy: `group`, `side`, `leader`, `target`. The same group and target are logged at most once per `enemyDetectedCooldown` seconds (default 120). |
 | `fleeing` | an AI group started or stopped fleeing: `group`, `side`, `leader`, `fleeing` |
 | `building` | a building or wall changed model, usually destroyed: `from`, `to` (classes), `ruin`, `pos` |
 | `end` | `reason`, `entities` |
@@ -127,6 +127,7 @@ class AAR {
     spikeThreshold = 100;   // ms; server frames slower than this get a perf_spike record and an RPT line
     pauseWhenEmpty = 1;     // dedicated server: no snapshots while no players are connected
     logAI = 1;              // combat_mode / enemy_detected / fleeing for AI groups
+    enemyDetectedCooldown = 120; // seconds before a group re-detecting the same target is logged again; 0 = every time
     logRadio = 1;           // radio_tx / radios / radio_nets with ACRE2 or TFAR
 };
 ```

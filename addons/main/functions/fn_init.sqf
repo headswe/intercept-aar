@@ -4,7 +4,7 @@
  *
  * Mission settings in description.ext (all optional):
  *   class AAR { enabled = 1; interval = 1; keyframeInterval = 60; logProjectiles = 1; logHits = 1; logMarkers = 1;
- *               frameBudget = 2; spikeThreshold = 100; pauseWhenEmpty = 1; logAI = 1; logRadio = 1; };
+ *               frameBudget = 2; spikeThreshold = 100; pauseWhenEmpty = 1; logAI = 1; enemyDetectedCooldown = 120; logRadio = 1; };
  */
 if (!isServer) exitWith {};
 aar_active = false;
@@ -26,6 +26,7 @@ aar_frameBudget = (["frameBudget", 2] call _setting) max 0.1;          // ms of 
 aar_spikeThreshold = (["spikeThreshold", 100] call _setting) max 1;  // ms; slower server frames are logged
 aar_pauseWhenEmpty = (["pauseWhenEmpty", 1] call _setting) != 0;
 aar_logAI = (["logAI", 1] call _setting) != 0;  // AI group behaviour, enemies detected, fleeing
+aar_enemyDetectedCooldown = (["enemyDetectedCooldown", 120] call _setting) max 0;  // s before a group's same target is logged again
 aar_tmf = isClass (configFile >> "CfgPatches" >> "tmf_common");  // TMF ORBAT and loadouts
 aar_logRadio = (["logRadio", 1] call _setting) != 0 && {isClass (configFile >> "CfgPatches" >> "acre_main") || isClass (configFile >> "CfgPatches" >> "tfar_core")};
 // TMF's ACRE2 radio networks, when the mission uses them.
