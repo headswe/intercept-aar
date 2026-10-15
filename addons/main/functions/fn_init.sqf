@@ -204,33 +204,31 @@ if (aar_logProjectiles) then {
 };
 
 if (aar_logMarkers) then {
-    // Markers local to the server are skipped: no player ever sees them. That also leaves out
-    // the shading the Cover Map module draws, which is recorded as cover_map instead.
+    // Every marker players can see, whoever made it; see aar_fnc_skipMarker for what is left out.
     addMissionEventHandler ["MarkerCreated", {
-        params ["_marker", "_channel", "_owner", "_local"];
-        if (!aar_active || _local) exitWith {};
+        params ["_marker", "_channel", "_owner"];
+        if (!aar_active || {_marker call aar_fnc_skipMarker}) exitWith {};
         ["marker_created", (_marker call aar_fnc_markerFields) + [
             "channel", toJSON _channel,
             "owner", toJSON (_owner call aar_fnc_id)
         ]] call aar_fnc_rec;
     }];
     addMissionEventHandler ["MarkerUpdated", {
-        params ["_marker", "_local"];
-        if (!aar_active || _local) exitWith {};
+        params ["_marker"];
+        if (!aar_active || {_marker call aar_fnc_skipMarker}) exitWith {};
         ["marker_updated", _marker call aar_fnc_markerFields] call aar_fnc_rec;
     }];
     addMissionEventHandler ["MarkerDeleted", {
-        params ["_marker", "_local", ["_deleter", objNull]];
-        if (!aar_active || _local) exitWith {};
+        params ["_marker", "", ["_deleter", objNull]];
+        if (!aar_active || {_marker call aar_fnc_skipMarker}) exitWith {};
         private _fields = ["marker", toJSON _marker];
         if (!isNull _deleter) then { _fields append ["by", toJSON (_deleter call aar_fnc_id)] };
         ["marker_deleted", _fields] call aar_fnc_rec;
     }];
     // Markers that exist before the recording starts: those placed in the editor and any a
-    // script made during init. The server cannot tell its local ones apart here, so only the
-    // Cover Map module's are left out, by name.
+    // script made during init.
     {
-        if ((toLowerANSI _x) find "bis_fnc_modulecovermap" == 0) then { continue };
+        if (_x call aar_fnc_skipMarker) then { continue };
         ["marker_created", (_x call aar_fnc_markerFields) + [
             "channel", toJSON markerChannel _x,
             "editor", "true"
