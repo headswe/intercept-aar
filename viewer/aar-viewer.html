@@ -936,17 +936,17 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
   //  - markers keep one size on screen at every zoom.
   // Arma screen units are about the screen height, taken as 1080 px here.
   // Groups outside the ORBAT (AI, or a tree keyed by faction) get TMF's spectator fallback: a plain
-  // marker with the group's name. Groups of one side merge by the same distance rule, as if under one node.
+  // marker in the side's colour with the group's name. Groups of one side merge by the same distance rule, as if under one node.
   const TMF_SCREEN = 1080, COLLAPSE_PX = 0.05 * TMF_SCREEN, LABEL_PX = Math.sqrt(0.0014) * TMF_SCREEN;
-  // TMF textures are x\tmf\addons\orbat\textures\<colour>_<symbol>.paa; TMF_groupMarker can also name
-  // any other texture, which is drawn as infantry. The colour is the side's, as in TMF's spectator, which
-  // recolours markers by side when it shows every side (fnc_getGroupMarkerData); the ORBAT tracker keeps
-  // squad colours, but there red Alpha squads would read as OPFOR.
+  // TMF textures are x\tmf\addons\orbat\textures\<colour>_<symbol>.paa, drawn in their squad colour as
+  // the ORBAT tracker does; TMF_groupMarker can also name any other texture, which is drawn as infantry
+  // in the side's colour.
+  const TMF_FILL = { blue: "#5b9bf0", red: "#e5484d", green: "#43a852", yellow: "#e6c33b", orange: "#ec8a2f", purple: "#9b62d6", gray: "#a0a4a8" };
   function tmfTexture(path) {
     const f = String(path || "").split(/[\\/]/).pop().toLowerCase().replace(/\.paa$/, "");
     if (!f || f === "empty") return null;
-    const m = f.match(/^(?:blue|red|green|yellow|orange|purple|gray)(?:_(.+))?$/);
-    return { symbol: m ? m[1] || "blank" : "inf" };
+    const m = f.match(/^(blue|red|green|yellow|orange|purple|gray)(?:_(.+))?$/);
+    return m ? { fill: TMF_FILL[m[1]], symbol: m[2] || "blank" } : { fill: null, symbol: "inf" };
   }
   const tmfSize = path => (String(path || "").toLowerCase().match(/modif_(o|dot|2dot|3dot|company)/) || [])[1] || "";
 
@@ -1085,7 +1085,7 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
     for (const m of out) {
       const [x, y] = toScreen(m.x, m.y);
       ctx.globalAlpha = fade;
-      drawSymbol(ctx, x, y, m.tex ? m.tex.symbol : "inf", sideColor(m.side), m.size);
+      drawSymbol(ctx, x, y, m.tex ? m.tex.symbol : "inf", (m.tex && m.tex.fill) || sideColor(m.side), m.size);
       if (m.kids && !m.tex) { ctx.strokeStyle = "#151515"; ctx.lineWidth = 1; ctx.strokeRect(x - 16, y - 12, 32, 24); }
       if (m.sib * view.scale >= LABEL_PX && m.text) {
         ctx.font = "600 12px " + font; ctx.textAlign = "left"; ctx.textBaseline = "middle";
