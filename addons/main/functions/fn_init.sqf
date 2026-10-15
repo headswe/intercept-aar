@@ -66,6 +66,7 @@ aar_batch = 100;        // entities per frame, adjusted to stay within aar_frame
 aar_lastWorkMs = 0;
 aar_idle = false;
 aar_radioOpen = createHashMap;          // "unit radio" -> true while a transmission is open
+aar_remoteProj = createHashMap;         // "client owner:client projectile id" -> projectile id, see aar_fnc_projectileReport
 aar_radioNetsPending = aar_tmfNets isNotEqualTo [];  // radio_nets is written once TMF built its presets
 
 ["header", [
@@ -171,6 +172,10 @@ if (aar_logProjectiles) then {
         params ["_projectile"];
         if (!aar_active) exitWith {};
         (getShotParents _projectile) params [["_shooter", objNull], ["_instigator", objNull]];
+        // Only the firing machine's copy of a projectile hits and ends reliably, so projectiles
+        // fired by players and headless client AI are reported by that machine (aar_fnc_projectileClient).
+        private _firer = [_instigator, _shooter] select (isNull _instigator);
+        if (isMultiplayer && {!isNull _firer} && {!local _firer}) exitWith {};
         private _weapon = "";
         if (!isNull _shooter) then {
             _weapon = if (_shooter isKindOf "CAManBase") then {
@@ -201,6 +206,7 @@ if (aar_logProjectiles) then {
             ["end", _projectile, getPosASL _projectile, _projectile getVariable ["aar_exploded", false]] call aar_fnc_projectile;
         }];
     }];
+    [[], aar_fnc_projectileClient] remoteExecCall ["call", -2, "aar_projectileClient"];
 };
 
 if (aar_logMarkers) then {
