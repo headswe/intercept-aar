@@ -1,6 +1,6 @@
 /*
- * TMF fields that follow a unit's group: the ORBAT node the group sits under, the group's short
- * name (the text on its TMF group marker, e.g. "A1"), and with TMF's ACRE2 radio networks the
+ * TMF fields that follow a unit's group: the ORBAT node the group sits under, the group's TMF
+ * group marker (its text, e.g. "A1", and its icon and size textures), and with TMF's ACRE2 radio networks the
  * network the unit is on and the channels TMF puts it on (indexes into that network's channels
  * in the radio_nets record).
  *
@@ -17,8 +17,12 @@ if (_parent isNotEqualTo -1) then { _fields append ["orbat", toJSON _parent] };
 private _marker = _group getVariable ["TMF_groupMarker", []];
 if (_marker isEqualType "") then { _marker = if (_marker isEqualTo "") then { [] } else { parseSimpleArray _marker } };
 if (_marker isEqualType []) then {
-    private _short = _marker param [1, ""];
+    _marker params [["_icon", ""], ["_short", ""], ["_size", ""]];
     if (_short isEqualType "" && {_short isNotEqualTo ""}) then { _fields append ["group_short", toJSON _short] };
+    if (_icon isEqualType "" && {_icon isNotEqualTo ""}) then {
+        _fields append ["group_icon", toJSON _icon];
+        if (_size isEqualType "" && {_size isNotEqualTo ""}) then { _fields append ["group_size", toJSON _size] };
+    };
 };
 
 if (aar_tmfNets isNotEqualTo [] && {!isNil "TMF_acre2_fnc_unitToPreset"}) then {

@@ -56,6 +56,7 @@ private _missionText = {
 aar_path = _path;
 aar_buffer = [];
 aar_entities = createHashMap;
+aar_leaders = createHashMap;            // "side|group" -> id of its leader, see aar_fnc_snapshot
 aar_projShooters = createHashMap;  // projectile id -> shooter id while in flight
 aar_nextId = 1;
 aar_nextPid = 1;
