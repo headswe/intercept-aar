@@ -234,6 +234,9 @@ if (aar_logMarkers) then {
             "editor", "true"
         ]] call aar_fnc_rec;
     } forEach allMapMarkers;
+    // Players' markers on channels other than Global never reach the server, so every machine
+    // with a player gets the client half as code (no mod needed there) and reports its own.
+    [[], aar_fnc_markerClient] remoteExecCall ["call", [0, -2] select isDedicated, "aar_markerClient"];
 };
 
 true call aar_fnc_coverMap;

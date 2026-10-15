@@ -68,7 +68,7 @@ Every line is a JSON object with `type` and `t` (mission time in seconds, from `
 | `player` | `unit`, `uid`, `name` when a player takes or leaves a unit (empty `uid` = now AI) |
 | `respawn` | `new`, `old` |
 | `connected` / `disconnected` | `uid`, `name`, `jip`, `owner` |
-| `marker_created` / `marker_updated` / `marker_deleted` | `marker` (name), and on created / updated the whole state: `text`, `markerType`, `color`, `shape` (`ICON`, `RECTANGLE`, `ELLIPSE`, `POLYLINE`), `brush`, `size` (`[a, b]`, half-sizes in metres for areas), `dir`, `alpha`, `pos`, `line` (polylines: `[x1, y1, x2, y2, ...]`); created also has `channel` and `owner`, or `editor: true` for markers already on the map when the recording started; `marker_deleted` has `by` (who deleted it) when known. Markers created, moved or deleted by server scripts are recorded like player-drawn ones; the Cover Map module's shading markers are left out (recorded as `cover_map`) |
+| `marker_created` / `marker_updated` / `marker_deleted` | `marker` (name), and on created / updated the whole state: `text`, `markerType`, `color`, `shape` (`ICON`, `RECTANGLE`, `ELLIPSE`, `POLYLINE`), `brush`, `size` (`[a, b]`, half-sizes in metres for areas), `dir`, `alpha`, `pos`, `line` (polylines: `[x1, y1, x2, y2, ...]`); created also has `channel` and `owner`, or `editor: true` for markers already on the map when the recording started; `marker_deleted` has `by` (who deleted it) when known. Markers created, moved or deleted by server scripts are recorded like player-drawn ones; the Cover Map module's shading markers are left out (recorded as `cover_map`). Player markers on channels other than Global (side, command, group, vehicle, direct) never reach the server, so each client reports its own, the same way as radio traffic |
 | `cover_map` | a Cover Map module's uncovered area, at the start and whenever it moves or changes: `id`, `pos`, `area` (`[a, b, angle]` like `triggerArea`), or `removed: true` once the module is gone |
 | `deleted` | `id` when an entity is removed from the world |
 | `combat_mode` | an AI group's behaviour changed (`mode`: `SAFE`, `AWARE`, `COMBAT`, `STEALTH`, `CARELESS`), also written once when the group is first seen: `group`, `side`, `leader` |
@@ -157,6 +157,10 @@ When [TMF](https://github.com/TMF3/TMF) is loaded, the recording carries its ORB
 - `role` and `loadout_faction` are TMF's assign gear classes (`r`, `sl`, ...), and `role_name` is the role's display name from `CfgLoadouts`. TMF gives players their gear on their own machine, so the role often arrives a moment later as a `loadout` record.
 
 Without TMF none of these fields are written.
+
+## Player markers
+
+The server only receives markers drawn on the Global channel; markers on the side, command, group, vehicle or direct channel stay with the players on that channel. So the server also sends every machine with a player a small piece of code (`fn_markerClient.sqf`, via `remoteExecCall` and queued for players who join later; nothing to install on clients). The player who places, moves or deletes such a marker reports it, and on arrival the code also reports the player's markers from the briefing. The server writes them as ordinary `marker_created` / `marker_updated` / `marker_deleted` records with the sender's unit as `owner` or `by`. A mission with its own `CfgRemoteExec` in whitelist mode needs `class aar_fnc_marker { allowedTargets = 2; };` under `Functions`.
 
 ## Radio
 
