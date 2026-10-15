@@ -68,7 +68,7 @@ Every line is a JSON object with `type` and `t` (mission time in seconds, from `
 | `player` | `unit`, `uid`, `name` when a player takes or leaves a unit (empty `uid` = now AI) |
 | `respawn` | `new`, `old` |
 | `connected` / `disconnected` | `uid`, `name`, `jip`, `owner` |
-| `marker_created` / `marker_updated` / `marker_deleted` | `marker` (name), and on created / updated the whole state: `text`, `markerType`, `color`, `shape` (`ICON`, `RECTANGLE`, `ELLIPSE`, `POLYLINE`), `brush`, `size` (`[a, b]`, half-sizes in metres for areas), `dir`, `alpha`, `pos`, `line` (polylines: `[x1, y1, x2, y2, ...]`); created also has `channel` and `owner`, or `editor: true` for markers already on the map when the recording started; `marker_deleted` has `by` (who deleted it) when known. Markers local to the server are not recorded, since no player sees them |
+| `marker_created` / `marker_updated` / `marker_deleted` | `marker` (name), and on created / updated the whole state: `text`, `markerType`, `color`, `shape` (`ICON`, `RECTANGLE`, `ELLIPSE`, `POLYLINE`), `brush`, `size` (`[a, b]`, half-sizes in metres for areas), `dir`, `alpha`, `pos`, `line` (polylines: `[x1, y1, x2, y2, ...]`); created also has `channel` and `owner`, or `editor: true` for markers already on the map when the recording started; `marker_deleted` has `by` (who deleted it) when known. Markers created, moved or deleted by server scripts are recorded like player-drawn ones; the Cover Map module's shading markers are left out (recorded as `cover_map`). Player markers on channels other than Global (side, command, group, vehicle, direct) never reach the server, so each client reports its own, the same way as radio traffic |
 | `cover_map` | a Cover Map module's uncovered area, at the start and whenever it moves or changes: `id`, `pos`, `area` (`[a, b, angle]` like `triggerArea`), or `removed: true` once the module is gone |
 | `deleted` | `id` when an entity is removed from the world |
 | `combat_mode` | an AI group's behaviour changed (`mode`: `SAFE`, `AWARE`, `COMBAT`, `STEALTH`, `CARELESS`), also written once when the group is first seen: `group`, `side`, `leader` |
@@ -135,6 +135,7 @@ class AAR {
 ## How it works
 
 - `fn_init.sqf` (postInit, server only) opens the file through the extension, writes the header and adds the mission event handlers, including `ProjectileCreated` with the projectile event handlers (`HitPart`, `HitExplosion`, `Explode`, `Deleted`, `SubmunitionCreated`).
+- Only the firing machine's copy of a projectile hits, explodes and ends reliably; the server's copy of a player's bullet never reports a hit. So the server records the projectiles its own units fire, and sends every other machine (players and headless clients) `fn_projectileClient.sqf`, which records the projectiles fired by that machine's units and sends them to `aar_fnc_projectileReport` four times a second, with how long ago each event happened so the server stamps the right time. A mission with its own `CfgRemoteExec` in whitelist mode needs `class aar_fnc_projectileReport { allowedTargets = 2; };`. The server's own copies of other machines' submunitions (artillery and smoke shells, bomblets) are held until a parent the server recorded claims them, so they are not written twice.
 - An `EachFrame` handler (`fn_frame.sqf`) starts a snapshot every `interval` seconds and works through it a batch of entities per frame (`fn_snapshot.sqf`), so a big mission spreads the work over several frames instead of one hitch. The extension times each of those frames, and the batch size adjusts to keep the recorder's work near `frameBudget` ms. The snap line is written once, stamped with the time the snapshot started. Everything queued in a frame goes to the extension in one `callExtension` call (`fn_flush.sqf`).
 - Server frames slower than `spikeThreshold` are logged as `perf_spike` with the recorder's share, so a hitch can be told apart from one the recorder caused. The RPT gets `[AAR] frame spike: ...`.
 - Records are built in SQF as JSON text, with strings written by `toJSON` and numbers by `toFixed`. The extension trims the numbers and appends the lines to the file from a background thread that flushes at least once a second.
@@ -158,6 +159,10 @@ When [TMF](https://github.com/TMF3/TMF) is loaded, the recording carries its ORB
 - `role` and `loadout_faction` are TMF's assign gear classes (`r`, `sl`, ...), and `role_name` is the role's display name from `CfgLoadouts`. TMF gives players their gear on their own machine, so the role often arrives a moment later as a `loadout` record.
 
 Without TMF none of these fields are written.
+
+## Player markers
+
+The server only receives markers drawn on the Global channel; markers on the side, command, group, vehicle or direct channel stay with the players on that channel. So the server also sends every machine with a player a small piece of code (`fn_markerClient.sqf`, via `remoteExecCall` and queued for players who join later; nothing to install on clients). The player who places, moves or deletes such a marker reports it, and on arrival the code also reports the player's markers from the briefing. The server writes them as ordinary `marker_created` / `marker_updated` / `marker_deleted` records with the sender's unit as `owner` or `by`. A mission with its own `CfgRemoteExec` in whitelist mode needs `class aar_fnc_marker { allowedTargets = 2; };` under `Functions`.
 
 ## Radio
 

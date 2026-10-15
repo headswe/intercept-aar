@@ -67,6 +67,14 @@ aar_batch = 100;        // entities per frame, adjusted to stay within aar_frame
 aar_lastWorkMs = 0;
 aar_idle = false;
 aar_radioOpen = createHashMap;          // "unit radio" -> true while a transmission is open
+// Ammo that only exists as a submunition of another shot (artillery and smoke shells, bomblets).
+aar_subAmmo = createHashMap;
+{
+    private _sub = _x >> "submunitionAmmo";
+    { if (_x isEqualType "" && {_x isNotEqualTo ""}) then { aar_subAmmo set [toLowerANSI _x, true] } }
+        forEach ([getArray _sub, [getText _sub]] select (isText _sub));
+} forEach ("isText (_x >> 'submunitionAmmo') || {isArray (_x >> 'submunitionAmmo')}" configClasses (configFile >> "CfgAmmo"));
+aar_remoteProj = createHashMap;         // "client owner:client projectile id" -> projectile id, see aar_fnc_projectileReport
 aar_radioNetsPending = aar_tmfNets isNotEqualTo [];  // radio_nets is written once TMF built its presets
 
 ["header", [
@@ -172,6 +180,10 @@ if (aar_logProjectiles) then {
         params ["_projectile"];
         if (!aar_active) exitWith {};
         (getShotParents _projectile) params [["_shooter", objNull], ["_instigator", objNull]];
+        // Only the firing machine's copy of a projectile hits and ends reliably, so projectiles
+        // fired by players and headless client AI are reported by that machine (aar_fnc_projectileClient).
+        private _firer = [_instigator, _shooter] select (isNull _instigator);
+        if (isMultiplayer && {!isNull _firer} && {!local _firer}) exitWith {};
         private _weapon = "";
         if (!isNull _shooter) then {
             _weapon = if (_shooter isKindOf "CAManBase") then {
@@ -202,41 +214,43 @@ if (aar_logProjectiles) then {
             ["end", _projectile, getPosASL _projectile, _projectile getVariable ["aar_exploded", false]] call aar_fnc_projectile;
         }];
     }];
+    [[], aar_fnc_projectileClient] remoteExecCall ["call", -2, "aar_projectileClient"];
 };
 
 if (aar_logMarkers) then {
-    // Markers local to the server are skipped: no player ever sees them. That also leaves out
-    // the shading the Cover Map module draws, which is recorded as cover_map instead.
+    // Every marker players can see, whoever made it; see aar_fnc_skipMarker for what is left out.
     addMissionEventHandler ["MarkerCreated", {
-        params ["_marker", "_channel", "_owner", "_local"];
-        if (!aar_active || _local) exitWith {};
+        params ["_marker", "_channel", "_owner"];
+        if (!aar_active || {_marker call aar_fnc_skipMarker}) exitWith {};
         ["marker_created", (_marker call aar_fnc_markerFields) + [
             "channel", toJSON _channel,
             "owner", toJSON (_owner call aar_fnc_id)
         ]] call aar_fnc_rec;
     }];
     addMissionEventHandler ["MarkerUpdated", {
-        params ["_marker", "_local"];
-        if (!aar_active || _local) exitWith {};
+        params ["_marker"];
+        if (!aar_active || {_marker call aar_fnc_skipMarker}) exitWith {};
         ["marker_updated", _marker call aar_fnc_markerFields] call aar_fnc_rec;
     }];
     addMissionEventHandler ["MarkerDeleted", {
-        params ["_marker", "_local", ["_deleter", objNull]];
-        if (!aar_active || _local) exitWith {};
+        params ["_marker", "", ["_deleter", objNull]];
+        if (!aar_active || {_marker call aar_fnc_skipMarker}) exitWith {};
         private _fields = ["marker", toJSON _marker];
         if (!isNull _deleter) then { _fields append ["by", toJSON (_deleter call aar_fnc_id)] };
         ["marker_deleted", _fields] call aar_fnc_rec;
     }];
     // Markers that exist before the recording starts: those placed in the editor and any a
-    // script made during init. The server cannot tell its local ones apart here, so only the
-    // Cover Map module's are left out, by name.
+    // script made during init.
     {
-        if ((toLowerANSI _x) find "bis_fnc_modulecovermap" == 0) then { continue };
+        if (_x call aar_fnc_skipMarker) then { continue };
         ["marker_created", (_x call aar_fnc_markerFields) + [
             "channel", toJSON markerChannel _x,
             "editor", "true"
         ]] call aar_fnc_rec;
     } forEach allMapMarkers;
+    // Players' markers on channels other than Global never reach the server, so every machine
+    // with a player gets the client half as code (no mod needed there) and reports its own.
+    [[], aar_fnc_markerClient] remoteExecCall ["call", [0, -2] select isDedicated, "aar_markerClient"];
 };
 
 true call aar_fnc_coverMap;

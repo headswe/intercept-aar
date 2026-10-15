@@ -13,6 +13,13 @@ if (!aar_active || {isNull _projectile}) exitWith {};
 
 if (_kind isEqualTo "created") exitWith {
     _this params ["", "", "_shooterObj", "_instigatorObj", "_weapon", "_pos", "_vel"];
+    // A submunition without a known parent yet may belong to a shot fired on another machine,
+    // which that machine reports; the server's copy of it must not be recorded as well. Hold it
+    // until its parent's SubmunitionCreated claims it ("sub" below); unclaimed, it is never written.
+    if (isMultiplayer && {isNull _shooterObj} && {isNull _instigatorObj} && {(_projectile getVariable ["aar_parent", 0]) == 0}
+        && {(toLowerANSI typeOf _projectile) in aar_subAmmo}) exitWith {
+        _projectile setVariable ["aar_pending", [_weapon, _pos, _vel]];
+    };
     private _pid = aar_nextPid;
     aar_nextPid = aar_nextPid + 1;
     _projectile setVariable ["aar_pid", _pid];
@@ -43,8 +50,16 @@ if (_kind isEqualTo "sub") exitWith {
     private _sub = _this select 2;
     if (isNull _sub) exitWith {};
     private _sid = _sub getVariable ["aar_pid", 0];
-    // ProjectileCreated has not run for it yet; it will pick the parent up from this variable.
-    if (_sid <= 0) exitWith { _sub setVariable ["aar_parent", _pid] };
+    // ProjectileCreated has not run for it yet, or held it back above; either way it picks the
+    // parent up from this variable.
+    if (_sid <= 0) exitWith {
+        _sub setVariable ["aar_parent", _pid];
+        private _pending = _sub getVariable "aar_pending";
+        if (isNil "_pending") exitWith {};
+        _sub setVariable ["aar_pending", nil];
+        _pending params ["_weapon", "_pos", "_vel"];
+        ["created", _sub, objNull, objNull, _weapon, _pos, _vel] call aar_fnc_projectile;
+    };
     private _shooter = aar_projShooters getOrDefault [_pid, 0];
     if (_sid in aar_projShooters) then { aar_projShooters set [_sid, _shooter] };
     ["submunition", ["id", toJSON _sid, "parent", toJSON _pid, "shooter", toJSON _shooter]] call aar_fnc_rec;

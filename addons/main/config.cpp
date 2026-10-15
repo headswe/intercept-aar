@@ -25,6 +25,8 @@ class CfgFunctions {
             class register {};
             class snapshot {};
             class projectile {};
+            class projectileReport {};
+            class projectileClient { headerType = -1; };  // sent to clients as code, so no function header
             class flush {};
             class frame {};
             class hit {};
@@ -39,16 +41,22 @@ class CfgFunctions {
             class radioClient { headerType = -1; };  // sent to clients as code, so no function header
             class radioNets {};
             class markerFields {};
+            class skipMarker {};
+            class marker {};
+            class markerClient { headerType = -1; };  // sent to clients as code, so no function header
             class coverMap {};
             class stop {};
         };
     };
 };
 
-// Clients report radio transmissions to the server (aar_fnc_radio). Allowed here for servers that
+// Clients report radio transmissions (aar_fnc_radio), their markers off the Global channel
+// (aar_fnc_marker) and the projectiles their units fire (aar_fnc_projectileReport) to the server. Allowed here for servers that
 // whitelist remote execution; a mission with its own CfgRemoteExec in whitelist mode must list it too.
 class CfgRemoteExec {
     class Functions {
         class aar_fnc_radio { allowedTargets = 2; jip = 0; };
+        class aar_fnc_marker { allowedTargets = 2; jip = 0; };
+        class aar_fnc_projectileReport { allowedTargets = 2; jip = 0; };
     };
 };
