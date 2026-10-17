@@ -26,7 +26,7 @@ def get(url, tries=4):
     req = urllib.request.Request(url, headers={"User-Agent": "arma-aar-viewer-build"})
     for attempt in range(tries):
         try:
-            with urllib.request.urlopen(req, timeout=30) as res:
+            with urllib.request.urlopen(req, timeout=15) as res:
                 return json.load(res)
         except urllib.error.HTTPError as e:
             if e.code == 404:
@@ -64,20 +64,29 @@ def main():
     base = args[1] if len(args) > 1 else "https://mission-db.1tac.eu/tiles/"
     if not base.endswith("/"):
         base += "/"
+    # Once MissionDB keeps failing (the alias map, or three terrains in a row) it is treated as down and
+    # the rest comes from the previous copy, so an outage costs a few retries rather than one per terrain.
+    down = False
     try:
         aliases = get(base + "config.json") or {}
     except Exception as e:
         print(f"alias map failed ({e}), using the previous copy")
         aliases = prev.get("aliases", {})
+        down = True
     worlds = [l.strip().lower() for l in (HERE / "terrains.txt").read_text().splitlines()]
     slugs = sorted({w for w in worlds if w and not w.startswith("#")} - set(aliases) | set(aliases.values()))
     terrains = {}
+    failures = 0
     for slug in slugs:
-        try:
-            cfg = get(base + slug + "/config.json")
-        except Exception as e:
-            print(f"{slug} failed ({e}), using the previous copy")
-            cfg = prev.get("terrains", {}).get(slug)
+        cfg = prev.get("terrains", {}).get(slug)
+        if not down:
+            try:
+                cfg = get(base + slug + "/config.json")
+                failures = 0
+            except Exception as e:
+                print(f"{slug} failed ({e}), using the previous copy")
+                failures += 1
+                down = failures >= 3
         if isinstance(cfg, dict) and cfg.get("width"):
             terrains[slug] = {k: cfg[k] for k in KEEP if k in cfg}
     out.write_text(json.dumps({"aliases": aliases, "terrains": terrains}, separators=(",", ":")), encoding="utf-8")
