@@ -49,7 +49,8 @@ private _vec = { ((_this param [0, [], [[]]]) select [0, 3]) apply { [0, _x] sel
         };
         case "hit";
         case "splash": {
-            _x params ["", ["_cid", 0, [0]], ["_hitObj", objNull, [objNull]], ["_pos", [], [[]]], ["_part", "", [""]]];
+            // A splash entry is [kind, id, object, age]; only a hit carries a position and component.
+            _x params ["", ["_cid", 0, [0]], ["_hitObj", objNull, [objNull]]];
             private _pid = aar_remoteProj getOrDefault [_cid call _key, 0];
             if (_pid <= 0) then { continue };
             // Only hits on recorded units and vehicles, as for the server's own projectiles.
@@ -57,6 +58,7 @@ private _vec = { ((_this param [0, [], [[]]]) select [0, 3]) apply { [0, _x] sel
             if (_target <= 0) then { continue };
             private _fields = ["id", toJSON _pid, "target", toJSON _target];
             if (_kind == "hit") then {
+                _x params ["", "", "", ["_pos", [], [[]]], ["_part", "", [""]]];
                 _fields append ["pos", [_pos] call _vec call aar_fnc_pos];
                 if (_part isNotEqualTo "") then { _fields append ["part", toJSON (_part select [0, 64])] };
             };
