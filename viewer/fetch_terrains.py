@@ -92,7 +92,11 @@ def main():
     out.write_text(json.dumps({"aliases": aliases, "terrains": terrains}, separators=(",", ":")), encoding="utf-8")
     print(f"{len(terrains)} of {len(slugs)} terrains, {len(aliases)} aliases")
     if not terrains:
-        sys.exit("no terrain configs fetched")
+        # Refuse only when that would lose configs the published page still has; if it has none either,
+        # publishing without them is no worse and keeps viewer changes from waiting on MissionDB.
+        if prev.get("terrains"):
+            sys.exit("no terrain configs fetched")
+        print("warning: no terrain configs anywhere, publishing without them")
 
 
 if __name__ == "__main__":

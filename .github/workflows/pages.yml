@@ -33,8 +33,9 @@ jobs:
       - name: Build site
         run: |
           mkdir -p site
-          # Configs MissionDB fails to serve are kept from the published page. If none can be had at all
-          # the build fails, so a MissionDB outage never replaces a working site with one without tiles.
+          # Configs MissionDB fails to serve are kept from the published page. If none can be had but the
+          # published page has some, the build fails, so an outage never replaces a working site with one
+          # without tiles.
           python3 viewer/fetch_terrains.py --previous https://headswe.github.io/intercept-aar/ "$RUNNER_TEMP/terrains.json"
           T=(--terrains "$RUNNER_TEMP/terrains.json")
           python3 viewer/build.py "${T[@]}"
