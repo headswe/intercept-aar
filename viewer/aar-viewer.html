@@ -158,6 +158,13 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
 
 .drop { position: fixed; inset: 0; display: grid; place-items: center; background: color-mix(in srgb, var(--ground) 88%, transparent); border: 3px dashed var(--accent); font-family: var(--font-display); font-size: 1.6rem; z-index: 10; pointer-events: none; }
 .error { color: var(--east); font-size: 12px; }
+.load { position: relative; }
+.reclist { position: absolute; right: 0; top: calc(100% + 6px); z-index: 9; width: min(420px, calc(100vw - 32px)); max-height: 60vh; overflow: auto; background: var(--panel); border: 1px solid var(--rule); border-radius: 4px; box-shadow: 0 6px 20px rgba(0,0,0,.18); margin: 0; padding: 4px 0; list-style: none; }
+.reclist button { display: grid; grid-template-columns: 1fr auto; gap: 2px 12px; width: 100%; text-align: left; background: none; border: 0; padding: 6px 12px; font-size: 13px; color: var(--ink); }
+.reclist button:hover, .reclist button:focus-visible { background: color-mix(in srgb, var(--ink) 8%, transparent); }
+.reclist button[aria-current="true"] b { color: var(--accent); }
+.reclist small { grid-column: 1 / -1; color: var(--ink-soft); font-family: var(--font-data); font-size: 11px; }
+.reclist .size { color: var(--ink-soft); font-family: var(--font-data); font-size: 11px; }
 
 @media (max-width: 820px) {
   .app { height: auto; min-height: 100%; }
@@ -181,6 +188,8 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
       <span class="error" id="error" hidden></span>
       <input type="file" id="file" accept=".jsonl,.json,.txt" hidden>
       <button class="btn" id="samplebtn" hidden>Sample data</button>
+      <button class="btn" id="recbtn" aria-haspopup="true" aria-expanded="false" hidden>Recordings</button>
+      <ul class="reclist" id="reclist" hidden></ul>
       <button class="btn primary" id="open">Open recording</button>
     </div>
   </header>
@@ -1749,14 +1758,14 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
   });
   $("zin").onclick = () => zoomAt(1.5); $("zout").onclick = () => zoomAt(1 / 1.5); $("zfit").onclick = () => rec && fit();
   $("open").onclick = () => $("file").click();
-  $("file").onchange = e => { const f = e.target.files[0]; if (f) f.text().then(x => load(x, "")); e.target.value = ""; };
+  $("file").onchange = e => { const f = e.target.files[0]; if (f) f.text().then(x => { current = ""; load(x, ""); }); e.target.value = ""; };
 
   // drag and drop
   let dragDepth = 0;
   addEventListener("dragenter", e => { if ([...e.dataTransfer.types].includes("Files")) { dragDepth++; $("drop").hidden = false; e.preventDefault(); } });
   addEventListener("dragover", e => e.preventDefault());
   addEventListener("dragleave", () => { if (--dragDepth <= 0) { dragDepth = 0; $("drop").hidden = true; } });
-  addEventListener("drop", e => { e.preventDefault(); dragDepth = 0; $("drop").hidden = true; const f = e.dataTransfer.files[0]; if (f) f.text().then(x => load(x, "")); });
+  addEventListener("drop", e => { e.preventDefault(); dragDepth = 0; $("drop").hidden = true; const f = e.dataTransfer.files[0]; if (f) f.text().then(x => { current = ""; load(x, ""); }); });
 
   // map pan / zoom / pick
   const pointers = new Map(); let moved = 0, pinch = 0;
@@ -1846,6 +1855,69 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
     fetch("sample.jsonl").then(r => { if (!r.ok) throw new Error("HTTP " + r.status); return r.text(); })
       .then(x => load(x, "Sample recording (made up)"), err => { $("error").textContent = "Could not load the sample: " + err.message; $("error").hidden = false; });
   };
+  // ---------- recordings in ./aar/ ----------
+  // Served over http(s), the page looks for an aar/ folder next to it: aar/index.json if there is one
+  // (a list of names, or of {name, size, modified}), else the web server's directory listing.
+  // A page opened from disk can't list folders, so there is nothing to find there.
+  let recordings = [], current = "";
+  function parseRecName(name) {
+    const m = /^(\d{4})(\d{2})(\d{2})-(\d{2})(\d{2})(\d{2})_(.+)_([^_]+)\.jsonl$/i.exec(name);
+    return m ? { when: m[1] + "-" + m[2] + "-" + m[3] + " " + m[4] + ":" + m[5] + " UTC", mission: m[7], world: m[8] } : null;
+  }
+  function fmtSize(n) { return n == null || isNaN(n) ? "" : n < 1024 ? n + " B" : n < 1048576 ? (n / 1024).toFixed(0) + " KB" : (n / 1048576).toFixed(1) + " MB"; }
+  async function findRecordings() {
+    const base = new URL("aar/", location.href);
+    const get = async (u, type) => { const r = await fetch(u, { cache: "no-cache" }); if (!r.ok) throw new Error("HTTP " + r.status); return type === "json" ? r.json() : r.text(); };
+    let list = [];
+    try {
+      const idx = await get(new URL("index.json", base), "json");
+      for (const x of Array.isArray(idx) ? idx : idx.files || []) {
+        const o = typeof x === "string" ? { name: x } : x;
+        if (o && o.name && /\.jsonl$/i.test(o.name)) list.push({ name: String(o.name).split("/").pop(), url: new URL(o.name, base).href, size: +o.size, modified: o.modified || "" });
+      }
+    } catch (_) {
+      try {
+        const doc = new DOMParser().parseFromString(await get(base, "text"), "text/html");
+        const seen = new Set();
+        for (const a of doc.querySelectorAll("a[href]")) {
+          const u = new URL(a.getAttribute("href"), base);
+          if (!/\.jsonl$/i.test(u.pathname) || u.origin !== base.origin || !u.pathname.startsWith(base.pathname) || seen.has(u.href)) continue;
+          seen.add(u.href);
+          list.push({ name: decodeURIComponent(u.pathname.slice(base.pathname.length)), url: u.href });
+        }
+      } catch (_) { return []; }
+    }
+    // Recorder file names start with the UTC start time, so name order is newest first when reversed.
+    return list.sort((a, b) => b.name.localeCompare(a.name));
+  }
+  function renderRecList() {
+    $("reclist").innerHTML = recordings.map((x, i) => {
+      const p = parseRecName(x.name);
+      const title = p ? esc(p.mission) + " <span class=\"size\">on " + esc(p.world) + "</span>" : esc(x.name);
+      return '<li><button data-i="' + i + '"' + (x.url === current ? ' aria-current="true"' : "") + "><b>" + title + '</b><span class="size">' + fmtSize(x.size) + "</span>" +
+        "<small>" + esc(p ? p.when : x.modified || "") + "</small></button></li>";
+    }).join("");
+  }
+  function showRecList(open) {
+    $("reclist").hidden = !open; $("recbtn").setAttribute("aria-expanded", String(open));
+    if (open) { renderRecList(); const b = $("reclist").querySelector("button"); if (b) b.focus(); }
+  }
+  $("recbtn").onclick = () => showRecList($("reclist").hidden);
+  $("reclist").onclick = e => {
+    const b = e.target.closest("button[data-i]"); if (!b) return;
+    const x = recordings[+b.dataset.i]; showRecList(false);
+    $("error").hidden = true; $("meta").innerHTML = "<span>Loading " + esc(x.name) + "…</span>";
+    fetch(x.url).then(r => { if (!r.ok) throw new Error("HTTP " + r.status); return r.text(); })
+      .then(t => { current = x.url; load(t, ""); }, err => { if (!rec) $("meta").innerHTML = ""; else renderMeta(); $("error").textContent = "Could not load " + x.name + ": " + err.message; $("error").hidden = false; });
+  };
+  addEventListener("click", e => { if (!$("reclist").hidden && !e.target.closest("#reclist, #recbtn")) showRecList(false); });
+  addEventListener("keydown", e => { if (e.key === "Escape" && !$("reclist").hidden) { showRecList(false); $("recbtn").focus(); } });
+  if (location.protocol !== "file:") findRecordings().then(list => {
+    if (!list.length) return;
+    recordings = list;
+    $("recbtn").textContent = "Recordings (" + list.length + ")"; $("recbtn").hidden = false;
+    if (!rec && !src) $("meta").innerHTML = "<span>Found <b>" + list.length + "</b> recording" + (list.length > 1 ? "s" : "") + " in the <b>aar</b> folder. Pick one from <b>Recordings</b>, open a file, or drop it on the page.</span>";
+  });
   requestAnimationFrame(frame);
 })();
 </script>
