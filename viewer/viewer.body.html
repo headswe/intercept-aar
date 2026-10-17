@@ -1498,12 +1498,22 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
     "author", "overview", "game_type", "max_players", "server_name", "world_name", "world_size", "date", "time_multiplier", "weather", "game_version", "mods"]);
   function playerStats() {
     const stats = new Map();
-    const of = (id, time) => { const e = id && rec.entities.get(id); const u = e && uidAt(e, time); if (!u) return null; if (!stats.has(u)) stats.set(u, { name: nameAt(e, time), side: sideAt(e, time), k: 0, d: 0, shots: 0, hits: 0 }); return stats.get(u); };
+    const of = (id, time) => { const e = id && rec.entities.get(id); const u = e && uidAt(e, time); if (!u) return null; if (!stats.has(u)) stats.set(u, { name: nameAt(e, time), side: sideAt(e, time), k: 0, d: 0, shots: 0, dealt: 0, taken: 0 }); return stats.get(u); };
     for (const e of rec.entities.values()) for (const p of e.players) if (p[1]) of(e.id, p[0]);
     for (const k of rec.kills) { const a = of(k.instigator || k.killer, k.t); if (a && (k.instigator || k.killer) !== k.victim) a.k++; const v = of(k.victim, k.t); if (v) v.d++; }
     for (const x of rec.shotList) { if (x.parent) continue; const a = of(x.gunner || x.shooter, x.t0); if (a) a.shots++; }
-    const hits = rec.damage.length ? rec.damage.map(h => [h.unit, h.t]) : rec.hits.filter(h => h.type === "proj_hit").map(h => [h.target, h.t]);
-    for (const [id, time] of hits) { const v = of(id, time); if (v) v.hits++; }
+    // Hit records (one per damaging hit on a unit or vehicle) when the recording has them, else bullet impacts.
+    // A bullet can report several impacts, so a target counts once per attacker per instant.
+    const hits = rec.damage.length ? rec.damage.map(h => [h.unit, h.instigator || h.source, h.t])
+      : rec.hits.filter(h => h.type === "proj_hit").map(h => { const s = rec.shots.get(h.id); return [h.target, s && (s.gunner || s.shooter), h.t]; });
+    const seen = new Set();
+    for (const [id, by, time] of hits) {
+      const key = id + "|" + by + "|" + Math.round(time * 10);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      const v = of(id, time); if (v) v.taken++;
+      if (by && by !== id) { const a = of(by, time); if (a) a.dealt++; }
+    }
     return [...stats.values()].sort((a, b) => a.side.localeCompare(b.side) || b.k - a.k || a.name.localeCompare(b.name));
   }
   function renderMission() {
@@ -1541,8 +1551,8 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
       [...sides].sort().map(([sd, x]) => '<tr><td class="s-' + esc(sd) + '">' + esc(sideName(sd)) + '</td><td class="n">' + x.units + '</td><td class="n">' + x.vehicles + '</td><td class="n">' + x.lost + '</td><td class="n">' + x.players.size + "</td></tr>").join("") + "</table></div>";
 
     const ps = playerStats();
-    html += '<div class="sec"><h3>Players</h3>' + (ps.length ? '<table class="tbl"><tr><th>Name</th><th class="n" title="Kills">K</th><th class="n" title="Deaths">D</th><th class="n">Shots</th><th class="n" title="Times hit">Hit</th></tr>' +
-      ps.map(p => '<tr><td class="s-' + esc(p.side) + '">' + esc(p.name) + '</td><td class="n">' + p.k + '</td><td class="n">' + p.d + '</td><td class="n">' + p.shots + '</td><td class="n">' + p.hits + "</td></tr>").join("") + "</table>"
+    html += '<div class="sec"><h3>Players</h3>' + (ps.length ? '<table class="tbl"><tr><th>Name</th><th class="n" title="Kills">K</th><th class="n" title="Deaths">D</th><th class="n" title="Rounds, grenades and rockets fired">Shots</th><th class="n" title="Times this player hit another unit or vehicle">Hits</th><th class="n" title="Times this player was hit">Hit by</th></tr>' +
+      ps.map(p => '<tr><td class="s-' + esc(p.side) + '">' + esc(p.name) + '</td><td class="n">' + p.k + '</td><td class="n">' + p.d + '</td><td class="n">' + p.shots + '</td><td class="n">' + p.dealt + '</td><td class="n">' + p.taken + "</td></tr>").join("") + "</table>"
       : '<div class="empty" style="padding:0">No players in this recording.</div>') + "</div>";
     $("pane-mission").innerHTML = html;
   }
