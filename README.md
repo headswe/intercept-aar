@@ -115,12 +115,19 @@ Served from a web server, the viewer also looks for an `aar/` folder next to the
 
 ### Names and icons from the game
 
-Recordings keep class names only. The viewer gets display names and the game's map icons and pictures from two files you make once per modset, so they stay out of every recording:
+Recordings keep class names only. The viewer gets display names and the game's map icons from two files next to the recordings, which the server writes by itself:
 
-1. **Names** (`aar-cfg.json`): start the editor with the server's mods, open the debug console (Tools > Debug Console), paste `tools/export_cfg.sqf`, press **Local Exec**, and paste the clipboard into a file named `aar-cfg.json`. It holds display names, pictures and map icons for every vehicle and unit class, weapon names and pictures, faction names and the `CfgVehicleIcons` table.
-2. **Icons** (`aar-icons.json`): browsers cannot read `.paa`, so `tools/export_icons.py` (Python 3, no packages) finds the textures in the game's and mods' PBOs and converts them to PNG: `python3 tools/export_icons.py "C:/Program Files (x86)/Steam/steamapps/common/Arma 3" -c aar-cfg.json -r path/to/aar`. It searches the folders given (Arma's own folder covers the DLCs and `!Workshop`; add other mod folders after it) and exports every map icon in `aar-cfg.json`, the pictures of the vehicles and weapons the given recordings use (every picture with `--all-pictures`, which makes a large file) and any other `.paa` a recording names, such as TMF group icons. `--include <path>` adds every texture under a path inside the PBOs. Running it again merges into the existing file.
+- `aar-cfg.json`: display names, pictures and map icon classes for every vehicle and unit class, weapon names and pictures, faction names and the `CfgVehicleIcons` table.
+- `aar-icons.json`: the map icons as PNG, since browsers cannot read `.paa`. The extension finds the textures in the PBOs of the game and the loaded mods.
 
-Open both files in the viewer (with **Open recording** or by dropping them, together with a recording or on their own) and it keeps them in the browser for next time. Served over http, it also picks up `aar-cfg.json` and `aar-icons.json` from next to the page or from `aar/`. With them, weapons in the event feed show their names, zoomed-in units and vehicles are drawn with the game's map icon in their side's colour, and a vehicle's card shows its picture. Without them the viewer works as before.
+At mission start the recorder compares the game version and mod list with `aar-gamedata.key` in the same folder. Only when they differ does it read the names from the config (spawned, so spread over frames) and hand them to the extension, which writes the files on a background thread and logs `[AAR] names and map icons for the viewer: ...` to the RPT when done. `exportGameData = 0` in the mission's `class AAR` turns this off.
+
+The same files can be made by hand, for example to add vehicle and weapon pictures, which the server leaves out to keep the file small:
+
+1. **Names:** start the editor with the server's mods, open the debug console (Tools > Debug Console), paste `tools/export_cfg.sqf`, press **Local Exec**, and paste the clipboard into a file named `aar-cfg.json`.
+2. **Icons and pictures:** `python3 tools/export_icons.py "C:/Program Files (x86)/Steam/steamapps/common/Arma 3" -c aar-cfg.json -r path/to/aar` (Python 3, no packages). It searches the folders given (Arma's own folder covers the DLCs and `!Workshop`; add other mod folders after it) and exports every map icon in `aar-cfg.json`, the pictures of the vehicles and weapons the given recordings use (every picture with `--all-pictures`, which makes a large file) and any other `.paa` a recording names, such as TMF group icons. `--include <path>` adds every texture under a path inside the PBOs. Running it again merges into the existing file. Open a hand-made file in the viewer rather than putting it in the server's `aar/` folder, where the server replaces it after a mod change.
+
+Served over http, the viewer picks up `aar-cfg.json` and `aar-icons.json` from next to the page or from `aar/`. Files can also be opened in the viewer (with **Open recording** or by dropping them, together with a recording or on their own); it keeps them in the browser for next time, and icons from several files add up. With them, weapons in the event feed show their names, zoomed-in units and vehicles are drawn with the game's map icon in their side's colour, and a vehicle's card shows its picture when the icons file has one. Without them the viewer works as before.
 
 The page is generated from `viewer/viewer.body.html` by `viewer/build.py`; pass a recording to embed it as the example that opens with the page. `viewer/sample.py` writes a made-up recording that uses every record type, for trying the viewer out.
 
@@ -142,6 +149,7 @@ class AAR {
     logAI = 1;              // combat_mode / enemy_detected / fleeing for AI groups, on the server, headless clients and player-led groups
     enemyDetectedCooldown = 120; // seconds before a group re-detecting the same target is logged again; 0 = every time
     logRadio = 1;           // radio_tx / radios / radio_nets with ACRE2 or TFAR
+    exportGameData = 1;     // write aar-cfg.json / aar-icons.json for the viewer when the mods have changed
 };
 ```
 

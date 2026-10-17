@@ -51,6 +51,7 @@ class CfgFunctions {
             class marker {};
             class markerClient { headerType = -1; };  // sent to clients as code, so no function header
             class coverMap {};
+            class gameData {};
             class stop {};
         };
     };
