@@ -556,6 +556,9 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
   const CHAT_CHANNELS = ["Global", "Side", "Command", "Group", "Vehicle", "Direct"];
   const chatChannel = o => o.channel_name || CHAT_CHANNELS[o.channel] || (o.channel >= 6 && o.channel <= 15 ? "Custom " + (o.channel - 5) : o.channel === 16 ? "System" : o.channel === 17 ? "BattlEye" : "Channel " + o.channel);
   // The sender of a chat message: the unit when it was recorded, else the name sent with it.
+  // Who a side, command, group or vehicle message went to.
+  const chatTo = o => o.to_group ? '<span class="who s-' + esc(o.to_side) + '">' + esc(o.to_group) + "</span>"
+    : o.to_vehicle ? who(o.to_vehicle, o.t) : o.to_side ? '<span class="who s-' + esc(o.to_side) + '">' + esc(sideName(o.to_side)) + "</span>" : "";
   const chatSender = o => o.unit ? who(o.unit, o.t) : o.name || o.from ? '<span class="who">' + esc(o.name || o.from) + "</span>" : "";
 
   // ---------- formatting ----------
@@ -1365,7 +1368,7 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
       }
       case "chat": {
         const from = chatSender(o);
-        return ["chat", (from ? from + " " : "") + '<span class="tag" style="color:var(--chat)">' + esc(chatChannel(o)) + '</span>: <span class="said">' + esc(o.text) + "</span>"];
+        return ["chat", (from ? from + " " : "") + '<span class="tag" style="color:var(--chat)">' + esc(chatChannel(o)) + "</span>" + (chatTo(o) ? " to " + chatTo(o) : "") + ': <span class="said">' + esc(o.text) + "</span>"];
       }
       case "building": return ["world", (o.ruin ? "Building destroyed" : "Building changed") + ' <span class="tag">' + esc(o.from) + "</span>" + (o.pos ? ' <span class="tag">' + grid(o.pos[0], o.pos[1]) + "</span>" : "")];
       case "idle": return ["world", o.idle ? "Server empty, recording paused" : "Players back, recording resumed"];
@@ -1604,7 +1607,7 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
         '<label><input type="checkbox" data-chan="' + esc(c) + '"' + (hidden.has(c) ? "" : " checked") + ">" + esc(c) + " (" + n + ")</label>").join("") + "</div>" +
       '<ol class="feed">' + shown.slice(0, LIMIT).map(o => {
         const from = chatSender(o);
-        return '<li data-t="' + o.t + '"><time>' + fmt(o.t) + '</time><div><span class="tag" style="color:var(--chat)">' + esc(chatChannel(o)) + "</span> " + (from ? from + ": " : "") + '<span class="said">' + esc(o.text) + "</span></div></li>";
+        return '<li data-t="' + o.t + '"><time>' + fmt(o.t) + '</time><div><span class="tag" style="color:var(--chat)">' + esc(chatChannel(o)) + "</span> " + (from ? from : "") + (chatTo(o) ? " → " + chatTo(o) : "") + (from || chatTo(o) ? ": " : "") + '<span class="said">' + esc(o.text) + "</span></div></li>";
       }).join("") + "</ol>" +
       (shown.length > LIMIT ? '<p class="tag">First ' + LIMIT + " of " + shown.length + " shown; the Data tab has them all.</p>" : "");
   }

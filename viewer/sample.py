@@ -164,7 +164,8 @@ for t, ch, pid, text in ((14, 0, 2, "o7 all"), (30, 1, 1, "Platoon, step off in 
                          (44, 5, 2, "you got my back on the left?"), (90, 4, 6, "driver, stop at the treeline"),
                          (131, 2, 1, "Contact east, marina. Bravo push north"), (262, 1, 2, "they're running"),
                          (330, 3, 6, "anyone need ammo?"), (395, 0, 1, "gg, ENDEX")):
-    ev(t, "chat", channel=ch, text=text, unit=pid, name=players[pid][1], player=True)
+    to = {1: dict(to_side="WEST"), 2: dict(to_side="WEST"), 3: dict(to_group=units[pid]["group"], to_side="WEST"), 4: dict(to_vehicle=car)}.get(ch, {})
+    ev(t, "chat", channel=ch, text=text, unit=pid, name=players[pid][1], player=True, **to)
 ev(200, "chat", channel=6, channel_name="Fires", text="Mortars ready", unit=2, name="Kim", player=True)
 ev(410, "chat", channel=16, text="Kim was kicked off by BattlEye: Client not responding")
 # Radios: what each player carries, a retune, and transmissions (ACRE2 reports start and end).
