@@ -1,6 +1,6 @@
 # Arma AAR Recorder
 
-Records an Arma 3 mission for After Action Review. An SQF addon collects unit and vehicle snapshots, kills, hits, every projectile from muzzle to impact, vehicle get in/out, player connects, markers and ACRE2 / TFAR radio traffic, and hands the records in one batch per frame to a small extension (`arma_aar_x64.dll` / `.so`) that writes them to a `.jsonl` file on a background thread.
+Records an Arma 3 mission for After Action Review. An SQF addon collects unit and vehicle snapshots, kills, hits, every projectile from muzzle to impact, vehicle get in/out, player connects, markers, chat on every channel and ACRE2 / TFAR radio traffic, and hands the records in one batch per frame to a small extension (`arma_aar_x64.dll` / `.so`) that writes them to a `.jsonl` file on a background thread.
 
 Open a recording in the [viewer](#viewing-a-recording) to play it back on a map and read everything in it.
 
@@ -71,6 +71,7 @@ Every line is a JSON object with `type` and `t` (mission time in seconds, from `
 | `respawn` | `new`, `old` |
 | `connected` / `disconnected` | `uid`, `name`, `jip`, `owner` |
 | `marker_created` / `marker_updated` / `marker_deleted` | `marker` (name), and on created / updated the whole state: `text`, `markerType`, `color`, `shape` (`ICON`, `RECTANGLE`, `ELLIPSE`, `POLYLINE`), `brush`, `size` (`[a, b]`, half-sizes in metres for areas), `dir`, `alpha`, `pos`, `line` (polylines: `[x1, y1, x2, y2, ...]`); created also has `channel` and `owner`, or `editor: true` for markers already on the map when the recording started; `marker_deleted` has `by` (who deleted it) when known. Markers created, moved or deleted by server scripts are recorded like player-drawn ones; the Cover Map module's shading markers are left out (recorded as `cover_map`). Player markers on channels other than Global (side, command, group, vehicle, direct) never reach the server, so each client reports its own, the same way as radio traffic |
+| `chat` | a chat message: `channel` (0 global, 1 side, 2 command, 3 group, 4 vehicle, 5 direct, 6-15 custom, 16 system), `text`, and when known `channel_name` (custom channels), `unit` (sender), `name` (sender's name), `from` (the sender as the chat shows it, when it differs from `name`), `player: true` for messages a player typed. Who it went to: `to_side` on side and command messages, `to_group` and `to_side` on group messages, `to_vehicle` (id) on vehicle messages, taken from the sender's unit when it was sent. Chat on most channels never reaches a dedicated server, so each player reports the messages they type, the same way as markers; the server records the rest it sees itself (system messages, chat from server scripts). Lines starting with `#` (server commands such as `#login`) are never recorded |
 | `cover_map` | a Cover Map module's uncovered area, at the start and whenever it moves or changes: `id`, `pos`, `area` (`[a, b, angle]` like `triggerArea`), or `removed: true` once the module is gone |
 | `deleted` | `id` when an entity is removed from the world |
 | `combat_mode` | an AI group's behaviour changed (`mode`: `SAFE`, `AWARE`, `COMBAT`, `STEALTH`, `CARELESS`), also written once when the group is first seen: `group`, `side`, `leader` |
@@ -108,6 +109,7 @@ Served from a web server, the viewer also looks for an `aar/` folder next to the
 - **Timeline:** shots per second as bars, kills as red ticks, server AI behaviour changes as small dark ticks, frame spikes as amber ticks and idle periods shaded. Click or drag to seek. Space plays and pauses, the arrow keys skip 5 s (30 s with Shift), and `[` / `]` change speed.
 - **Events:** every event up to the current time, filterable by kind (kills, hits, vehicles, players, markers, AI, world, shots). Click one to jump to it.
 - **Radio:** transmissions on the map as waves around the speaker with the channel name, a teal bar per transmission on the timeline, and a Radio tab with TMF's networks and channels (frequency, how many transmissions, time on air, units assigned), other channels heard, who talked most, and every transmission (click one to jump to it). A transmission takes its name from the TMF channel on the same frequency, else ACRE's channel label, else the channel number. A unit's card lists its radios, its TMF network and channels, and what it is transmitting on.
+- **Chat:** every message in the event feed with its channel, a pink tick per message on the timeline, what a unit typed shown next to it on the map for a few seconds, and a Chat tab listing all messages with a checkbox per channel (click one to jump to it).
 - **Units:** the TMF ORBAT tree when the recording has one, with each node's units and who is still alive; otherwise units by side and group.
 - **Mission:** everything in the header (mission, author, briefing, world, in-game date, weather, game version, mods), how the mission ended, and per-player stats.
 - **Server:** server FPS, minimum FPS, units, entities and projectiles in flight over the mission from the `perf` records, the recorder's own cost, and a list of frame spikes.
@@ -133,6 +135,7 @@ class AAR {
     logAI = 1;              // combat_mode / enemy_detected / fleeing for AI groups, on the server, headless clients and player-led groups
     enemyDetectedCooldown = 120; // seconds before a group re-detecting the same target is logged again; 0 = every time
     logRadio = 1;           // radio_tx / radios / radio_nets with ACRE2 or TFAR
+    logChat = 1;            // chat records: what players type on every channel, plus system and script messages the server sees
 };
 ```
 

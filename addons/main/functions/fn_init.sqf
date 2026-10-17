@@ -4,7 +4,8 @@
  *
  * Mission settings in description.ext (all optional):
  *   class AAR { enabled = 1; interval = 1; keyframeInterval = 60; logProjectiles = 1; logHits = 1; logMarkers = 1;
- *               frameBudget = 2; spikeThreshold = 100; pauseWhenEmpty = 1; logAI = 1; enemyDetectedCooldown = 120; logRadio = 1; };
+ *               frameBudget = 2; spikeThreshold = 100; pauseWhenEmpty = 1; logAI = 1; enemyDetectedCooldown = 120; logRadio = 1;
+ *               logChat = 1; };
  */
 if (!isServer) exitWith {};
 aar_active = false;
@@ -27,6 +28,7 @@ aar_spikeThreshold = (["spikeThreshold", 100] call _setting) max 1;  // ms; slow
 aar_pauseWhenEmpty = (["pauseWhenEmpty", 1] call _setting) != 0;
 aar_logAI = (["logAI", 1] call _setting) != 0;  // AI group behaviour, enemies detected, fleeing
 aar_enemyDetectedCooldown = (["enemyDetectedCooldown", 120] call _setting) max 0;  // s before a group's same target is logged again
+aar_logChat = (["logChat", 1] call _setting) != 0;  // chat on every channel
 aar_tmf = isClass (configFile >> "CfgPatches" >> "tmf_common");  // TMF ORBAT and loadouts
 aar_logRadio = (["logRadio", 1] call _setting) != 0 && {isClass (configFile >> "CfgPatches" >> "acre_main") || isClass (configFile >> "CfgPatches" >> "tfar_core")};
 // TMF's ACRE2 radio networks, when the mission uses them.
@@ -289,6 +291,20 @@ if (aar_logMarkers) then {
     // Players' markers on channels other than Global never reach the server, so every machine
     // with a player gets the client half as code (no mod needed there) and reports its own.
     [[], aar_fnc_markerClient] remoteExecCall ["call", [0, -2] select isDedicated, "aar_markerClient"];
+};
+
+if (aar_logChat) then {
+    // Messages the server sees itself that no player typed: system messages and chat from server
+    // scripts (globalChat, sideChat, systemChat...). Player messages are reported by the player
+    // who typed them (aar_fnc_chatClient), since most channels never reach a dedicated server.
+    addMissionEventHandler ["HandleChatMessage", {
+        params ["_channel", "", "_from", "_text", "_person", "_name", "", "", "_isPlayerMessage"];
+        if (aar_active && {!_isPlayerMessage} && {_text isNotEqualTo ""}) then {
+            [_channel, _person, _name, _from, _text, false] call aar_fnc_chat;
+        };
+        nil  // anything else returned would change or hide the message
+    }];
+    [[], aar_fnc_chatClient] remoteExecCall ["call", [0, -2] select isDedicated, "aar_chatClient"];
 };
 
 true call aar_fnc_coverMap;
