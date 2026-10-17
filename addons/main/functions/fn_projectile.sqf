@@ -30,6 +30,11 @@ if (_kind isEqualTo "created") exitWith {
     private _parent = _projectile getVariable ["aar_parent", 0];
     if (_parent > 0 && _shooter == 0) then { _shooter = aar_projShooters getOrDefault [_parent, 0] };
     aar_projShooters set [_pid, _shooter];
+    // Weapon and origin for the victim's killed record (aar_fnc_lastHit). A submunition keeps its
+    // parent's, so an artillery kill is measured from the gun.
+    private _shot = [_weapon, _pos, _instigator];
+    if (_parent > 0) then { _shot = aar_projShots getOrDefault [_parent, _shot] };
+    aar_projShots set [_pid, _shot];
 
     private _fields = ["id", toJSON _pid, "shooter", toJSON _shooter];
     if (_instigator != 0 && _instigator != _shooter) then { _fields append ["instigator", toJSON _instigator] };
@@ -61,7 +66,10 @@ if (_kind isEqualTo "sub") exitWith {
         ["created", _sub, objNull, objNull, _weapon, _pos, _vel] call aar_fnc_projectile;
     };
     private _shooter = aar_projShooters getOrDefault [_pid, 0];
-    if (_sid in aar_projShooters) then { aar_projShooters set [_sid, _shooter] };
+    if (_sid in aar_projShooters) then {
+        aar_projShooters set [_sid, _shooter];
+        if (_pid in aar_projShots) then { aar_projShots set [_sid, aar_projShots get _pid] };
+    };
     ["submunition", ["id", toJSON _sid, "parent", toJSON _pid, "shooter", toJSON _shooter]] call aar_fnc_rec;
 };
 
@@ -70,6 +78,9 @@ if (_kind in ["hit", "splash"]) exitWith {
     private _target = (_this select 2) call aar_fnc_knownId;
     if (_target <= 0) exitWith {};
     private _fields = ["id", toJSON _pid, "target", toJSON _target];
+    (aar_projShots getOrDefault [_pid, ["", [], 0]]) params ["_weapon", "_from", "_instigator"];
+    [_target, aar_projShooters getOrDefault [_pid, 0], _instigator, _weapon, _from,
+        [[], _this select 3] select (_kind isEqualTo "hit"), time] call aar_fnc_lastHit;
     // HitPart fires once per component the bullet passes through, so several lines for the
     // same projectile and target trace its path through the body.
     if (_kind isEqualTo "hit") then {
@@ -83,4 +94,5 @@ if (_kind in ["hit", "splash"]) exitWith {
 if (_kind isEqualTo "end") exitWith {
     ["proj_end", ["id", toJSON _pid, "pos", (_this select 2) call aar_fnc_pos, "exploded", toJSON (_this select 3)]] call aar_fnc_rec;
     aar_projShooters deleteAt _pid;
+    aar_projShots deleteAt _pid;
 };

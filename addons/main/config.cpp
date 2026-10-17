@@ -32,6 +32,9 @@ class CfgFunctions {
             class hit {};
             class hitReport {};
             class hitClient { headerType = -1; };  // sent to clients as code, so no function header
+            class lastHit {};
+            class killed {};
+            class unconscious {};
             class registerGroup {};
             class groupEvent {};
             class groupClient { headerType = -1; };  // sent to clients as code, so no function header

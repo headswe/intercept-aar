@@ -29,6 +29,9 @@ for "_i" from _index to _end - 1 do {
 
             // Group, side and player changes are rare, so they are events rather than snapshot columns.
             if (_alive) then {
+                // Unconscious (ACE) or incapacitated (vanilla); ACE's event usually gets there first.
+                private _uncon = lifeState _obj == "INCAPACITATED" || {_obj getVariable ["ACE_isUnconscious", false]};
+                if (_uncon isNotEqualTo (_obj getVariable ["aar_uncon", false])) then { [_obj, _uncon] call aar_fnc_unconscious };
                 if (aar_logAI) then {
                     private _grp = group _obj;
                     if (local _grp && {!(_grp getVariable ["aar_group", false])}) then { _grp call aar_fnc_registerGroup };

@@ -7,9 +7,13 @@
  */
 params ["_unit", "_source", "_damage", "_instigator", ["_time", time]];
 if (!aar_active) exitWith {};
+private _target = _unit call aar_fnc_knownId;
+private _sourceId = _source call aar_fnc_id;
+private _instigatorId = _instigator call aar_fnc_id;
+[_target, _sourceId, _instigatorId, "", [], [], _time] call aar_fnc_lastHit;
 ["hit", [
-    "unit", toJSON (_unit call aar_fnc_knownId),
-    "source", toJSON (_source call aar_fnc_id),
-    "instigator", toJSON (_instigator call aar_fnc_id),
+    "unit", toJSON _target,
+    "source", toJSON _sourceId,
+    "instigator", toJSON _instigatorId,
     "damage", _damage toFixed 2
 ], _time] call aar_fnc_rec;
