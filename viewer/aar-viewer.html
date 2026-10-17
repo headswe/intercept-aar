@@ -294,7 +294,7 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
 
   const KNOWN = new Set(["end", "group", "player", "shot", "proj_hit", "proj_splash", "killed", "hit", "loadout", "perf_spike", "idle", "building",
     "marker_created", "marker_updated", "marker_deleted", "get_in", "get_out", "seat", "respawn", "connected", "disconnected", "combat_mode", "enemy_detected", "fleeing",
-    "radio_tx", "radios", "cover_map", "chat"]);
+    "radio_tx", "radios", "cover_map", "unconscious", "awake", "chat"]);
 
   // AI group state from combat_mode / enemy_detected / fleeing, keyed by side and group name.
   const groupKey = (side, name) => side + "|" + name;
@@ -320,7 +320,7 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
     const closeTx = (k, time) => { const x = openTx.get(k); if (x) { x.t1 = time; openTx.delete(k); } };
     const ent = id => {
       let e = r.entities.get(id);
-      if (!e) { e = { id, kind: "unit", name: "#" + id, side: "UNKNOWN", group: "", display: "", cls: "", player: false, states: [], groups: [], players: [], orbats: [], radios: [], shots: 0, kills: 0, info: {} }; r.entities.set(id, e); }
+      if (!e) { e = { id, kind: "unit", name: "#" + id, side: "UNKNOWN", group: "", display: "", cls: "", player: false, states: [], groups: [], players: [], orbats: [], radios: [], downs: [], shots: 0, kills: 0, info: {} }; r.entities.set(id, e); }
       return e;
     };
     let bad = 0;
@@ -342,7 +342,8 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
           const e = ent(o.id);
           Object.assign(e, { kind: o.kind, cls: o.class, display: o.display || o.class, side: o.side, name: o.name || o.display || o.class, group: o.group || "", player: !!o.player, uid: o.uid || "" });
           e.info = o;
-          for (const k of ["role", "role_name", "loadout_faction", "callsign", "orbat_team", "radio_net", "radio_channels"]) if (o[k] !== undefined) e[k] = o[k];
+          for (const k of ["role", "role_name", "loadout_faction", "callsign", "orbat_team", "radio_net", "radio_channels",
+            "var_name", "role_desc", "faction", "faction_name", "icon"]) if (o[k] !== undefined) e[k] = o[k];
           if (o.group) groupMarker(r, o);
           e.groups.push([o.t, o.group || "", o.side]);
           if (o.orbat !== undefined) e.orbats.push([o.t, o.orbat]);
@@ -424,7 +425,8 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
         case "submunition": { const s = r.shots.get(o.id); if (s) { s.parent = o.parent; s.shooter = s.shooter || o.shooter; } break; }
         case "proj_end": { const s = r.shots.get(o.id); if (s) { s.t1 = o.t; s.p1 = o.pos; s.exploded = o.exploded; } break; }
         case "proj_hit": case "proj_splash": r.hits.push(o); r.events.push(o); break;
-        case "killed": r.kills.push(o); if (o.instigator || o.killer) ent(o.instigator || o.killer).kills++; r.events.push(o); break;
+        case "killed": { r.kills.push(o); const by = o.instigator || o.killer; if (by && by !== o.victim) ent(by).kills++; r.events.push(o); break; }
+        case "unconscious": case "awake": ent(o.unit).downs.push([o.t, o.type === "unconscious"]); r.events.push(o); break;
         case "hit": r.damage.push(o); r.events.push(o); break;
         default: r.events.push(o); break;
       }
@@ -544,6 +546,11 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
   function isPlayerAt(e, time) { const p = lastOf(e.players, time); return !!(p && p[1]); }
   function uidAt(e, time) { const p = lastOf(e.players, time); return p && p[1] ? p[1] : ""; }
   function orbatAt(e, time) { const o = lastOf(e.orbats, time); return o ? o[1] : undefined; }
+  function downAt(e, time) { const d = lastOf(e.downs, time); return !!(d && d[1]); }
+  // Letter drawn in a unit's dot for its config map icon (CfgVehicleIcons class), once zoomed in.
+  const ICON_LETTERS = { iconmanmedic: "+", iconmanmg: "M", iconmanat: "A", iconmanengineer: "E", iconmanexplosive: "X",
+    iconmanleader: "L", iconmanofficer: "O", iconmanrecon: "R", iconmanvirtual: "V" };
+  const iconLetter = e => ICON_LETTERS[String(e.icon || "").toLowerCase()] || "";
 
   // ---------- colours ----------
   let C = {};
@@ -573,6 +580,8 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
   const fmt = s => { s = Math.max(0, s); const m = Math.floor(s / 60), x = Math.floor(s % 60); return String(m).padStart(2, "0") + ":" + String(x).padStart(2, "0"); };
   const grid = (x, y) => String(Math.floor(x / 100)).padStart(3, "0") + " " + String(Math.floor(y / 100)).padStart(3, "0");
   const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+  // Slot description without the "@group" suffix the editor adds.
+  const slotName = e => String(e.role_desc || "").split("@")[0].trim();
   function who(id, time) {
     if (!id) return '<span class="tag">unknown</span>';
     const e = rec.entities.get(id);
@@ -636,17 +645,29 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
     $("scale").querySelector("span").textContent = m >= 1000 ? m / 1000 + " km" : m + " m";
   }
 
-  function drawUnit(ctx, sx, sy, dir, col, alive, isPlayer, sel, r = 5) {
+  function drawUnit(ctx, sx, sy, dir, col, alive, isPlayer, sel, down = false, letter = "") {
     if (!alive) {
       ctx.strokeStyle = C.dead; ctx.lineWidth = 1.6; ctx.beginPath();
       ctx.moveTo(sx - 4, sy - 4); ctx.lineTo(sx + 4, sy + 4); ctx.moveTo(sx + 4, sy - 4); ctx.lineTo(sx - 4, sy + 4); ctx.stroke();
       return;
     }
-    const a = (dir - 90) * Math.PI / 180;
-    ctx.strokeStyle = col; ctx.lineWidth = 2;
-    ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(sx + Math.cos(a) * (r + 6), sy + Math.sin(a) * (r + 6)); ctx.stroke();
-    ctx.fillStyle = col; ctx.beginPath(); ctx.arc(sx, sy, r, 0, Math.PI * 2); ctx.fill();
-    if (isPlayer) { ctx.strokeStyle = C.ink; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(sx, sy, r + 2.5, 0, Math.PI * 2); ctx.stroke(); }
+    // Role letters need a bigger dot, so only once zoomed in (about 1 px per metre).
+    const r = letter && view.scale >= 1 ? 7 : 5;
+    if (down) {
+      // Unconscious: faded, no facing, dashed ring.
+      ctx.globalAlpha = 0.45; ctx.fillStyle = col; ctx.beginPath(); ctx.arc(sx, sy, r, 0, Math.PI * 2); ctx.fill(); ctx.globalAlpha = 1;
+      ctx.strokeStyle = col; ctx.lineWidth = 1.5; ctx.setLineDash([2, 2]); ctx.beginPath(); ctx.arc(sx, sy, r + 2.5, 0, Math.PI * 2); ctx.stroke(); ctx.setLineDash([]);
+    } else {
+      const a = (dir - 90) * Math.PI / 180;
+      ctx.strokeStyle = col; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(sx + Math.cos(a) * (r + 6), sy + Math.sin(a) * (r + 6)); ctx.stroke();
+      ctx.fillStyle = col; ctx.beginPath(); ctx.arc(sx, sy, r, 0, Math.PI * 2); ctx.fill();
+    }
+    if (r === 7) {
+      ctx.fillStyle = C.ground; ctx.font = "700 9px " + getComputedStyle(document.body).getPropertyValue("--font-data");
+      ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText(letter, sx, sy + 0.5);
+    }
+    if (isPlayer && !down) { ctx.strokeStyle = C.ink; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(sx, sy, r + 2.5, 0, Math.PI * 2); ctx.stroke(); }
     if (sel) { ctx.strokeStyle = C.accent; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(sx, sy, r + 6, 0, Math.PI * 2); ctx.stroke(); }
   }
   function drawVehicle(ctx, sx, sy, dir, col, alive, crew, sel, kind) {
@@ -952,7 +973,7 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
       if (e.kind !== "unit" || (s.veh && s.alive) || !layers.units) continue;
       const [sx, sy] = toScreen(s.x, s.y);
       const isP = isPlayerAt(e, t);
-      drawUnit(ctx, sx, sy, s.dir, sideColor(sideAt(e, t)), s.alive, isP, e.id === selected);
+      drawUnit(ctx, sx, sy, s.dir, sideColor(sideAt(e, t)), s.alive, isP, e.id === selected, s.alive && downAt(e, t), iconLetter(e));
       drawn.push([e.id, sx, sy]);
       if (e.id === selected && s.alive) {
         ctx.fillStyle = C.ink; ctx.font = "12px " + getComputedStyle(document.body).getPropertyValue("--font-ui");
@@ -1201,7 +1222,10 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
     const e = rec.entities.get(best);
     if (e.kind === "unit") {
       const grp = groupAt(e, t);
-      tooltip(ctx, hx, hy, [[nameAt(e, t)], [(e.role_name || e.display) + (grp ? " · " + (shortName(sideAt(e, t), grp) || grp) : ""), C["ink-soft"]]]);
+      const lines = [[nameAt(e, t)], [(e.role_name || slotName(e) || e.display) + (grp ? " · " + (shortName(sideAt(e, t), grp) || grp) : ""), C["ink-soft"]]];
+      const s = stateAt(e, t);
+      if (s && s.alive && downAt(e, t)) lines.push(["Unconscious", C.east]);
+      tooltip(ctx, hx, hy, lines);
     } else {
       const crew = [...rec.entities.values()].filter(u => u.kind === "unit" && (stateAt(u, t) || {}).veh === e.id && stateAt(u, t).alive);
       tooltip(ctx, hx, hy, [[e.callsign || e.display], ...crew.slice(0, 10).map(u => [nameAt(u, t), isPlayerAt(u, t) ? C.ink : C["ink-soft"]])]);
@@ -1223,6 +1247,8 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
       case "player": return [o.unit, o.uid ? "player: " + o.name : "now AI"];
       case "group": return [o.unit, "joined " + o.group];
       case "killed": return [o.victim, "killed", true];
+      case "unconscious": return [o.unit, "down", true];
+      case "awake": return [o.unit, "awake"];
     }
     return null;
   }
@@ -1351,7 +1377,17 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
   // ---------- feed ----------
   function describe(o) {
     switch (o.type) {
-      case "killed": return ["kills", '<span class="k s-EAST">Killed</span> ' + who(o.victim, o.t) + (o.instigator || o.killer ? " by " + who(o.instigator || o.killer, o.t) : "") + (o.pos ? ' <span class="tag">' + grid(o.pos[0], o.pos[1]) + "</span>" : "")];
+      case "killed": {
+        const by = o.instigator || o.killer;
+        return ["kills", '<span class="k s-EAST">Killed</span> ' + who(o.victim, o.t) + (by && by !== o.victim ? " by " + who(by, o.t) : "") +
+          (o.weapon ? ' <span class="tag">' + esc(o.weapon_name || o.weapon) + "</span>" : "") +
+          (o.distance !== undefined ? ' <span class="tag">' + Math.round(o.distance) + " m</span>" : "") +
+          (o.credit === "last_hit" ? ' <span class="tag" title="The game named no killer; credited to the last hit">last hit</span>' : "") +
+          (o.cause && !/^#(scripted|setdead)$/i.test(o.cause) ? ' <span class="tag">' + esc(String(o.cause).replace(/^#/, "")) + "</span>" : "") +
+          (o.pos ? ' <span class="tag">' + grid(o.pos[0], o.pos[1]) + "</span>" : "")];
+      }
+      case "unconscious": return ["kills", '<span class="k">Unconscious</span> ' + who(o.unit, o.t) + (o.by ? " after a hit from " + who(o.by, o.t) : "") + (o.pos ? ' <span class="tag">' + grid(o.pos[0], o.pos[1]) + "</span>" : "")];
+      case "awake": return ["kills", who(o.unit, o.t) + " woke up"];
       case "proj_hit": { const s = rec.shots.get(o.id); return ["hits", who(o.target, o.t) + " hit" + (o.part ? ' in <span class="tag">' + esc(o.part) + "</span>" : "") + (s && s.shooter ? " by " + who(s.gunner || s.shooter, o.t) : "")]; }
       case "proj_splash": { const s = rec.shots.get(o.id); return ["hits", who(o.target, o.t) + " caught in blast" + (s && s.ammo ? ' <span class="tag">' + esc(s.ammo) + "</span>" : "")]; }
       case "hit": return ["hits", who(o.unit, o.t) + ' took <span class="tag">' + Math.round(o.damage * 100) + "%</span> damage" + (o.instigator || o.source ? " from " + who(o.instigator || o.source, o.t) : "")];
@@ -1491,15 +1527,19 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
     const e = rec.entities.get(selected); if (!e) { card.hidden = true; return; }
     const s = stateAt(e, t);
     const onAir = txAt(t).filter(x => x.unit === e.id).map(x => x.label).join();
-    const key = selected + "|" + (s ? [Math.round(s.x), Math.round(s.y), s.alive, s.dmg, s.veh].join() : "x") + "|" + follow + "|" + onAir + "|" + idx(e.radios, t);
+    const down = !!(s && s.alive && downAt(e, t));
+    const key = selected + "|" + (s ? [Math.round(s.x), Math.round(s.y), s.alive, s.dmg, s.veh, down].join() : "x") + "|" + follow + "|" + onAir + "|" + idx(e.radios, t);
     if (!force && key === cardKey) return;
     cardKey = key;
     const veh = s && s.veh ? rec.entities.get(s.veh) : null;
     const oid = orbatAt(e, t), node = oid !== undefined ? rec.nodes.get(oid) : null;
-    const killsBy = rec.kills.filter(k => k.t <= t && (k.instigator || k.killer) === e.id).length;
+    const killsBy = rec.kills.filter(k => k.t <= t && k.victim !== e.id && (k.instigator || k.killer) === e.id).length;
     const shotsBy = rec.shotList.filter(x => x.t0 <= t && (x.gunner || x.shooter) === e.id).length;
     card.innerHTML = '<h2 class="s-' + esc(sideAt(e, t)) + '">' + esc(nameAt(e, t)) + '</h2><div class="tag">' + esc(e.display) + " · " + esc(e.cls) + "</div><dl>" +
-      "<dt>Status</dt><dd>" + (!s ? "not present" : s.alive ? "alive, " + Math.round(s.dmg * 100) + "% damage" : "dead") + "</dd>" +
+      "<dt>Status</dt><dd>" + (!s ? "not present" : s.alive ? (down ? "unconscious, " : "alive, ") + Math.round(s.dmg * 100) + "% damage" : "dead") + "</dd>" +
+      (e.faction_name || e.faction ? "<dt>Faction</dt><dd>" + esc(e.faction_name || e.faction) + "</dd>" : "") +
+      (e.role_desc ? "<dt>Slot</dt><dd>" + esc(e.role_desc) + "</dd>" : "") +
+      (e.var_name ? "<dt>Variable</dt><dd>" + esc(e.var_name) + "</dd>" : "") +
       (e.kind === "unit" ? "<dt>Group</dt><dd>" + esc(groupAt(e, t) || "–") + (shortName(sideAt(e, t), groupAt(e, t)) ? " · " + esc(shortName(sideAt(e, t), groupAt(e, t))) : "") + "</dd>" : "") +
       (e.role_name || e.role ? "<dt>Role</dt><dd>" + esc(e.role_name || e.role) + (e.loadout_faction ? " · " + esc(e.loadout_faction) : "") + "</dd>" : "") +
       (node ? "<dt>ORBAT</dt><dd>" + node.path.map(n => esc(n.name)).join(" › ") + "</dd>" : "") +

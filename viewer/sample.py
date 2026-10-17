@@ -80,13 +80,15 @@ for gi, (gname, node, n) in enumerate(west_groups):
         rec(1, "entity", id=nid, kind="unit", **{"class": "B_Soldier_F"}, display="Rifleman", side="WEST",
             name=name if not uid else "AI " + str(nid), group=gname, player=False, uid="", orbat=node,
             group_short=SHORT[gname], group_icon=ICON[gname][0], group_size=ICON[gname][1], radio_net=0, radio_channels=CHANNELS[gname] + ([0] if k == 0 else []),
-            loadout_faction="blu_f", role=role[0], role_name=role[1])
+            loadout_faction="blu_f", role=role[0], role_name=role[1], faction="BLU_F", faction_name="NATO",
+            icon={"pl": "iconManOfficer", "sl": "iconManLeader", "ftl": "iconManLeader", "ar": "iconManMG", "lat": "iconManAT", "m": "iconManMedic"}.get(role[0], "iconMan"),
+            var_name=f"{SHORT[gname].lower()}_{k + 1}", role_desc=f"{role[1]}@{gname}")
         if k == 0:
             rec(1, "leader", unit=nid, group=gname, side="WEST")
         nid += 1
 car = nid; nid += 1
 units[car] = dict(x=X0 - 40, y=Y0 - 20, dir=45, alive=True, dmg=0.0, veh=0, side="WEST", group="")
-rec(1, "entity", id=car, kind="car", **{"class": "B_MRAP_01_hmg_F"}, display="Hunter HMG", side="WEST", orbat=6, callsign="Hunter 1", orbat_team="WEST")
+rec(1, "entity", id=car, kind="car", **{"class": "B_MRAP_01_hmg_F"}, display="Hunter HMG", side="WEST", faction="BLU_F", faction_name="NATO", icon="iconCar", var_name="hunter_1", orbat=6, callsign="Hunter 1", orbat_team="WEST")
 east = []
 for g in range(2):
     for k in range(5):
@@ -94,11 +96,12 @@ for g in range(2):
         x, y = VX + math.cos(a) * rnd.uniform(20, 120), VY + math.sin(a) * rnd.uniform(20, 120)
         units[nid] = dict(x=x, y=y, dir=rnd.uniform(0, 360), alive=True, dmg=0.0, veh=0, side="EAST", group=f"Garrison {g + 1}")
         rec(1, "entity", id=nid, kind="unit", **{"class": "O_Soldier_F"}, display="Rifleman", side="EAST",
-            name=f"Garrison {g + 1}-{k + 1}", group=f"Garrison {g + 1}", player=False, uid="")
+            name=f"Garrison {g + 1}-{k + 1}", group=f"Garrison {g + 1}", player=False, uid="",
+            faction="OPF_F", faction_name="CSAT", icon="iconManLeader" if k == 0 else "iconMan")
         east.append(nid); nid += 1
 static = nid; nid += 1
 units[static] = dict(x=VX + 30, y=VY - 10, dir=200, alive=True, dmg=0.0, veh=0, side="EAST", group="")
-rec(1, "entity", id=static, kind="static", **{"class": "O_HMG_01_high_F"}, display="Mk30 HMG", side="EAST")
+rec(1, "entity", id=static, kind="static", **{"class": "O_HMG_01_high_F"}, display="Mk30 HMG", side="EAST", faction="OPF_F", faction_name="CSAT", icon="iconStaticMG")
 west = [i for i, u in units.items() if u["side"] == "WEST" and i != car]
 
 for g in range(2):
@@ -270,7 +273,19 @@ for t10 in range(10, DURATION * 10):
             u = units[vid]
             killer = rnd.choice([1, 2, 4, 5, 7]) if u["side"] == "EAST" else east[4]
             u["alive"] = False; u["dmg"] = 1.0
-            ev(t, "killed", victim=vid, killer=killer, instigator=killer, pos=[round(u["x"], 1), round(u["y"], 1), 20])
+            k = units[killer]
+            dist = round(math.hypot(u["x"] - k["x"], u["y"] - k["y"]), 1)
+            weapon = ("arifle_MX_F", "MX 6.5 mm") if k["side"] == "WEST" else ("arifle_Katiba_F", "Katiba 6.5 mm")
+            pos = [round(u["x"], 1), round(u["y"], 1), 20]
+            if u["side"] == "WEST":
+                # ACE medical: down first, bled out later; ACE credits the shooter.
+                ev(t - 25, "hit", unit=vid, source=killer, instigator=killer, damage=0.8)
+                ev(t - 25, "unconscious", unit=vid, pos=pos, by=killer)
+                ev(t, "killed", victim=vid, killer=killer, instigator=killer, pos=pos, credit="ace", cause="#bleedout",
+                   weapon=weapon[0], weapon_name=weapon[1], distance=dist)
+            else:
+                ev(t, "killed", victim=vid, killer=killer, instigator=killer, pos=pos, credit="engine",
+                   weapon=weapon[0], weapon_name=weapon[1], distance=dist)
     for old, rt in respawn_at.items():
         if abs(t - rt) < 0.05:
             new = nid; nid += 1

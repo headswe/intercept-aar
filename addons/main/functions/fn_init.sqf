@@ -60,6 +60,10 @@ aar_buffer = [];
 aar_entities = createHashMap;
 aar_leaders = createHashMap;            // "side|group" -> id of its leader, see aar_fnc_snapshot
 aar_projShooters = createHashMap;  // projectile id -> shooter id while in flight
+aar_projShots = createHashMap;     // projectile id -> [weapon, origin, instigator id] while in flight
+aar_lastHits = createHashMap;      // entity id -> its last hit, see aar_fnc_lastHit
+aar_pendingKills = createHashMap;  // victim id -> killed waiting for ACE's credit, see EntityKilled
+aar_aceMedical = isClass (configFile >> "CfgPatches" >> "ace_medical_status");
 aar_nextId = 1;
 aar_nextPid = 1;
 aar_lastSnapshot = -1e9;
@@ -156,13 +160,36 @@ addMissionEventHandler ["EntityKilled", {
     if (!aar_active) exitWith {};
     private _victim = _killed call aar_fnc_id;
     if (_victim == 0) exitWith {};
-    ["killed", [
-        "victim", toJSON _victim,
-        "killer", toJSON (_killer call aar_fnc_id),
-        "instigator", toJSON (_instigator call aar_fnc_id),
-        "pos", (getPosASL _killed) call aar_fnc_pos
-    ]] call aar_fnc_rec;
+    if (aar_aceMedical && {_killed isKindOf "CAManBase"}) exitWith {
+        // ACE medical kills by script, so the engine's killer is often nobody or the victim. ACE
+        // raises ace_killed with its own credit on the unit's machine, which reaches the server
+        // just before or after this; the record waits for it (written by the frame handler after
+        // 3 s without it, with the engine's credit).
+        private _ace = _killed getVariable "aar_aceKilled";
+        if (isNil "_ace") exitWith { aar_pendingKills set [_victim, [_killed, _killer, _instigator, time, getPosASL _killed]] };
+        _ace params ["_cause", "_aceKiller", "_aceInstigator"];
+        [_killed, [_aceKiller, _killer] select (isNull _aceKiller), [_aceInstigator, _instigator] select (isNull _aceInstigator), "ace", _cause, time, getPosASL _killed] call aar_fnc_killed;
+    };
+    [_killed, _killer, _instigator, "engine", "", time, getPosASL _killed] call aar_fnc_killed;
 }];
+
+if (aar_aceMedical) then {
+    ["ace_killed", {
+        params [["_unit", objNull, [objNull]], ["_cause", "", [""]], ["_killer", objNull, [objNull]], ["_instigator", objNull, [objNull]]];
+        if (!aar_active || {isNull _unit}) exitWith {};
+        private _victim = _unit getVariable ["aar_id", 0];
+        private _pending = aar_pendingKills getOrDefault [_victim, []];
+        if (_pending isEqualTo []) exitWith { _unit setVariable ["aar_aceKilled", [_cause, _killer, _instigator]] };
+        aar_pendingKills deleteAt _victim;
+        _pending params ["_obj", "_engineKiller", "_engineInstigator", "_time", "_pos"];
+        [_obj, [_killer, _engineKiller] select (isNull _killer), [_instigator, _engineInstigator] select (isNull _instigator), "ace", _cause, _time, _pos] call aar_fnc_killed;
+    }] call CBA_fnc_addEventHandler;
+    // Raised on every machine, so the server sees it for players too.
+    ["ace_unconscious", {
+        params [["_unit", objNull, [objNull]], ["_state", false, [false]]];
+        [_unit, _state] call aar_fnc_unconscious;
+    }] call CBA_fnc_addEventHandler;
+};
 
 addMissionEventHandler ["EntityRespawned", {
     params ["_new", "_old"];

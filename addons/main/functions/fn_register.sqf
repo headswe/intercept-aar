@@ -36,15 +36,31 @@ private _uid = if (isPlayer _obj) then { getPlayerUID _obj } else { "" };
 // [object, kind, group, side, uid, last snapshot state, TMF role]
 aar_entities set [_id, [_obj, _kind, _group, _side, _uid, [], _obj getVariable ["tmf_assigngear_role", ""]]];
 
+private _cfg = configFile >> "CfgVehicles" >> _class;
+private _faction = faction _obj;
+// The map icon: a CfgVehicleIcons class such as iconManMG, and the texture it stands for.
+private _icon = getText (_cfg >> "icon");
+private _iconPath = getText (configFile >> "CfgVehicleIcons" >> _icon);
+if (_iconPath isEqualTo "" && {"\" in _icon}) then { _iconPath = _icon };
 private _fields = [
     "id", toJSON _id,
     "kind", toJSON _kind,
     "class", toJSON _class,
-    "display", toJSON getText (configFile >> "CfgVehicles" >> _class >> "displayName"),
-    "side", toJSON _side
+    "display", toJSON getText (_cfg >> "displayName"),
+    "side", toJSON _side,
+    "faction", toJSON _faction,
+    "faction_name", toJSON getText (configFile >> "CfgFactionClasses" >> _faction >> "displayName"),
+    "icon", toJSON _icon,
+    "icon_path", toJSON _iconPath
 ];
+// Variable name given in the editor, the key for matching a unit to its mission slot.
+private _var = vehicleVarName _obj;
+if (_var isNotEqualTo "") then { _fields append ["var_name", toJSON _var] };
 if (_isUnit) then {
     _fields append ["name", toJSON name _obj, "group", toJSON _group, "player", toJSON (_uid isNotEqualTo ""), "uid", toJSON _uid];
+    // Slot description from the editor ("Rifleman@Alpha 1-1"), on playable units.
+    private _desc = roleDescription _obj;
+    if (_desc isNotEqualTo "") then { _fields append ["role_desc", toJSON _desc] };
 };
 if (aar_tmf) then { _fields append ([_obj, _kind] call aar_fnc_tmfFields) };
 ["entity", _fields] call aar_fnc_rec;
