@@ -441,6 +441,13 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
     for (const m of r.markers.values()) m.states.sort((a, b) => a.t - b.t);
     for (const g of r.groupInfo.values()) g.leaders.sort((a, b) => a[0] - b[0]);
     for (const c of r.coverMaps.values()) c.states.sort((a, b) => a.t - b.t);
+    // The ORBAT covers only sides a player was on at some point; AI-only sides keep plain group markers.
+    if (r.orbat && Array.isArray(r.orbat.teams)) {
+      const played = new Set();
+      for (const e of r.entities.values()) for (const p of e.players) if (p[1]) played.add(sideAt(e, p[0]));
+      r.orbat.teams = r.orbat.teams.filter(tm => !tm.side || played.has(tm.side));
+      if (!r.orbat.teams.length) r.orbat = null;
+    }
     // ORBAT node index. TMF node ids are unique across the whole tree, so one map covers every team.
     r.nodes = new Map();
     if (r.orbat && Array.isArray(r.orbat.teams)) {
@@ -962,7 +969,7 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
   //  - a marker's text shows only while its nearest sibling is at least sqrt(0.0014) screen units away;
   //  - markers keep one size on screen at every zoom.
   // Arma screen units are about the screen height, taken as 1080 px here.
-  // Groups outside the ORBAT (AI, or a tree keyed by faction) get TMF's spectator fallback: a plain
+  // Groups outside the ORBAT (AI, AI-only sides, or a tree keyed by faction) get TMF's spectator fallback: a plain
   // marker in the side's colour with the group's name. Groups of one side merge by the same distance rule, as if under one node.
   const TMF_SCREEN = 1080, COLLAPSE_PX = 0.05 * TMF_SCREEN, LABEL_PX = Math.sqrt(0.0014) * TMF_SCREEN;
   // TMF textures are x\tmf\addons\orbat\textures\<colour>_<symbol>.paa, drawn in their squad colour as
