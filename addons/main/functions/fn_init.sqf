@@ -105,10 +105,14 @@ aar_radioNetsPending = aar_tmfNets isNotEqualTo [];  // radio_nets is written on
 
 if (aar_tmf) then { call aar_fnc_orbat };
 
+if (aar_logHits) then {
+    [[], aar_fnc_hitClient] remoteExecCall ["call", -2, "aar_hitClient"];
+};
+
 if (aar_logAI) then {
     // Group AI events fire only where the group is local, so players' and headless clients'
     // machines get the client half as code and report their own groups.
-    [[], aar_fnc_groupClient] remoteExecCall ["call", -2, "aar_groupClient"];
+    [[aar_enemyDetectedCooldown], aar_fnc_groupClient] remoteExecCall ["call", -2, "aar_groupClient"];
 };
 
 if (aar_logRadio) then {
