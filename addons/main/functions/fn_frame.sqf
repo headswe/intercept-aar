@@ -45,6 +45,17 @@ if (aar_radioNetsPending && {!isNil "tmf_acre2_networksCreated" || time > 30}) t
     call aar_fnc_radioNets;
 };
 
+// Kills still waiting for ACE's credit (see EntityKilled in aar_fnc_init).
+if (count aar_pendingKills > 0) then {
+    {
+        _y params ["_obj", "_killer", "_instigator", "_time", "_pos"];
+        if (time - _time > 3) then {
+            aar_pendingKills deleteAt _x;
+            [_obj, _killer, _instigator, "engine", "", _time, _pos] call aar_fnc_killed;
+        };
+    } forEach +aar_pendingKills;
+};
+
 private _t = time;
 private _working = aar_snap isNotEqualTo [];
 if (!_working && {!aar_idle} && {_t - aar_lastSnapshot >= aar_interval}) then {

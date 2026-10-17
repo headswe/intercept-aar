@@ -29,6 +29,7 @@ private _vec = { ((_this param [0, [], [[]]]) select [0, 3]) apply { [0, _x] sel
             private _shooter = _shooterObj call aar_fnc_id;
             private _instigator = _instigatorObj call aar_fnc_id;
             aar_projShooters set [_pid, _shooter];
+            aar_projShots set [_pid, [_weapon select [0, 64], [_pos] call _vec, _instigator]];
             private _fields = ["id", toJSON _pid, "shooter", toJSON _shooter];
             if (_instigator != 0 && _instigator != _shooter) then { _fields append ["instigator", toJSON _instigator] };
             _fields append ["weapon", toJSON (_weapon select [0, 64]), "ammo", toJSON (_ammo select [0, 64]),
@@ -44,6 +45,7 @@ private _vec = { ((_this param [0, [], [[]]]) select [0, 3]) apply { [0, _x] sel
             aar_remoteProj set [_cid call _key, _pid];
             private _shooter = aar_projShooters getOrDefault [_parent, 0];
             aar_projShooters set [_pid, _shooter];
+            aar_projShots set [_pid, aar_projShots getOrDefault [_parent, ["", [], 0]]];
             ["shot", ["id", toJSON _pid, "shooter", toJSON _shooter, "parent", toJSON _parent, "weapon", toJSON "",
                 "ammo", toJSON (_ammo select [0, 64]), "pos", [_pos] call _vec call aar_fnc_pos, "vel", [_vel] call _vec call aar_fnc_pos], _time] call aar_fnc_rec;
         };
@@ -57,6 +59,9 @@ private _vec = { ((_this param [0, [], [[]]]) select [0, 3]) apply { [0, _x] sel
             private _target = _hitObj call aar_fnc_knownId;
             if (_target <= 0) then { continue };
             private _fields = ["id", toJSON _pid, "target", toJSON _target];
+            (aar_projShots getOrDefault [_pid, ["", [], 0]]) params ["_weapon", "_from", "_instigator"];
+            private _at = if (_kind == "hit") then { [_x param [3, [], [[]]]] call _vec } else { [] };
+            [_target, aar_projShooters getOrDefault [_pid, 0], _instigator, _weapon, _from, _at, _time] call aar_fnc_lastHit;
             if (_kind == "hit") then {
                 _x params ["", "", "", ["_pos", [], [[]]], ["_part", "", [""]]];
                 _fields append ["pos", [_pos] call _vec call aar_fnc_pos];
@@ -71,6 +76,7 @@ private _vec = { ((_this param [0, [], [[]]]) select [0, 3]) apply { [0, _x] sel
             aar_remoteProj deleteAt (_cid call _key);
             ["proj_end", ["id", toJSON _pid, "pos", [_pos] call _vec call aar_fnc_pos, "exploded", toJSON _exploded], _time] call aar_fnc_rec;
             aar_projShooters deleteAt _pid;
+            aar_projShots deleteAt _pid;
         };
     };
 } forEach (_batch select [0, 500]);
