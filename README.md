@@ -113,6 +113,15 @@ Served from a web server, the viewer also looks for an `aar/` folder next to the
 - **Server:** server FPS, minimum FPS, units, entities and projectiles in flight over the mission from the `perf` records, the recorder's own cost, and a list of frame spikes.
 - **Data:** a count of every record type in the file and the raw records of any type, so a field the viewer does not draw is still readable.
 
+### Names and icons from the game
+
+Recordings keep class names only. The viewer gets display names and the game's map icons and pictures from two files you make once per modset, so they stay out of every recording:
+
+1. **Names** (`aar-cfg.json`): start the editor with the server's mods, open the debug console (Tools > Debug Console), paste `tools/export_cfg.sqf`, press **Local Exec**, and paste the clipboard into a file named `aar-cfg.json`. It holds display names, pictures and map icons for every vehicle and unit class, weapon names and pictures, faction names and the `CfgVehicleIcons` table.
+2. **Icons** (`aar-icons.json`): browsers cannot read `.paa`, so `tools/export_icons.py` (Python 3, no packages) finds the textures in the game's and mods' PBOs and converts them to PNG: `python3 tools/export_icons.py "C:/Program Files (x86)/Steam/steamapps/common/Arma 3" -c aar-cfg.json -r path/to/aar`. It searches the folders given (Arma's own folder covers the DLCs and `!Workshop`; add other mod folders after it) and exports every map icon in `aar-cfg.json`, the pictures of the vehicles and weapons the given recordings use (every picture with `--all-pictures`, which makes a large file) and any other `.paa` a recording names, such as TMF group icons. `--include <path>` adds every texture under a path inside the PBOs. Running it again merges into the existing file.
+
+Open both files in the viewer (with **Open recording** or by dropping them, together with a recording or on their own) and it keeps them in the browser for next time. Served over http, it also picks up `aar-cfg.json` and `aar-icons.json` from next to the page or from `aar/`. With them, weapons in the event feed show their names, zoomed-in units and vehicles are drawn with the game's map icon in their side's colour, and a vehicle's card shows its picture. Without them the viewer works as before.
+
 The page is generated from `viewer/viewer.body.html` by `viewer/build.py`; pass a recording to embed it as the example that opens with the page. `viewer/sample.py` writes a made-up recording that uses every record type, for trying the viewer out.
 
 ## Mission settings
