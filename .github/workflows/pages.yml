@@ -32,9 +32,10 @@ jobs:
       - name: Build site
         run: |
           mkdir -p site
-          # If MissionDB is unreachable the pages still work, computing tile layouts from the world size.
-          T=()
-          if python3 viewer/fetch_terrains.py "$RUNNER_TEMP/terrains.json"; then T=(--terrains "$RUNNER_TEMP/terrains.json"); fi
+          # Configs MissionDB fails to serve are kept from the published page. If none can be had at all
+          # the build fails, so a MissionDB outage never replaces a working site with one without tiles.
+          python3 viewer/fetch_terrains.py --previous https://headswe.github.io/intercept-aar/ "$RUNNER_TEMP/terrains.json"
+          T=(--terrains "$RUNNER_TEMP/terrains.json")
           python3 viewer/build.py "${T[@]}"
           cp viewer/aar-viewer.html site/index.html
           python3 viewer/sample.py site/sample.jsonl
