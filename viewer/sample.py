@@ -159,6 +159,14 @@ ev(124, "enemy_detected", group="Garrison 2", side="EAST", leader=east[5], targe
 ev(124.3, "combat_mode", group="Garrison 2", side="EAST", leader=east[5], mode="COMBAT")
 ev(260, "fleeing", group="Garrison 2", side="EAST", leader=east[5], fleeing=True)
 ev(290, "fleeing", group="Garrison 2", side="EAST", leader=east[5], fleeing=False)
+# Chat on several channels: what players typed, plus a system message the server saw.
+for t, ch, pid, text in ((14, 0, 2, "o7 all"), (30, 1, 1, "Platoon, step off in 2 mikes"), (31, 3, 6, "Alpha copies"),
+                         (44, 5, 2, "you got my back on the left?"), (90, 4, 6, "driver, stop at the treeline"),
+                         (131, 2, 1, "Contact east, marina. Bravo push north"), (262, 1, 2, "they're running"),
+                         (330, 3, 6, "anyone need ammo?"), (395, 0, 1, "gg, ENDEX")):
+    ev(t, "chat", channel=ch, text=text, unit=pid, name=players[pid][1], player=True)
+ev(200, "chat", channel=6, channel_name="Fires", text="Mortars ready", unit=2, name="Kim", player=True)
+ev(410, "chat", channel=16, text="Kim was kicked off by BattlEye: Client not responding")
 # Radios: what each player carries, a retune, and transmissions (ACRE2 reports start and end).
 def radio(rid, cls, name, ch, freq, label):
     return {"radio_id": rid, "radio": cls, "radio_name": name, "channel": ch, "freq": freq, "channel_name": label}

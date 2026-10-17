@@ -19,6 +19,7 @@
   --civ: #7f44b5;
   --dead: #8a8d84;
   --radio: #0b7f86;       /* radio transmissions */
+  --chat: #a8457a;        /* chat messages */
   --font-display: "Barlow Condensed", "Arial Narrow", sans-serif;
   --font-ui: "IBM Plex Sans Condensed", "Arial Narrow", system-ui, sans-serif;
   --font-data: "IBM Plex Mono", ui-monospace, Menlo, Consolas, monospace;
@@ -27,14 +28,14 @@
   :root:not([data-theme="light"]) {
     --ground: #12161a; --panel: #191e23; --ink: #dfe4dc; --ink-soft: #8f998c; --rule: #2c343b;
     --grid: rgba(160, 190, 170, .07); --grid-major: rgba(160, 190, 170, .17);
-    --accent: #f0ad2e; --west: #5b95f0; --east: #ef6656; --guer: #4cc26c; --civ: #b07ce2; --dead: #6b726f; --radio: #3fc3c9;
+    --accent: #f0ad2e; --west: #5b95f0; --east: #ef6656; --guer: #4cc26c; --civ: #b07ce2; --dead: #6b726f; --radio: #3fc3c9; --chat: #e58ab8;
     color-scheme: dark;
   }
 }
 :root[data-theme="dark"] {
   --ground: #12161a; --panel: #191e23; --ink: #dfe4dc; --ink-soft: #8f998c; --rule: #2c343b;
   --grid: rgba(160, 190, 170, .07); --grid-major: rgba(160, 190, 170, .17);
-  --accent: #f0ad2e; --west: #5b95f0; --east: #ef6656; --guer: #4cc26c; --civ: #b07ce2; --dead: #6b726f; --radio: #3fc3c9;
+  --accent: #f0ad2e; --west: #5b95f0; --east: #ef6656; --guer: #4cc26c; --civ: #b07ce2; --dead: #6b726f; --radio: #3fc3c9; --chat: #e58ab8;
   color-scheme: dark;
 }
 html, body { height: 100%; }
@@ -96,6 +97,7 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
 .feed time { font-family: var(--font-data); font-size: 12px; color: var(--ink-soft); font-variant-numeric: tabular-nums; }
 .feed .k { font-weight: 600; }
 .feed .tag { font-family: var(--font-data); font-size: 11px; color: var(--ink-soft); }
+.said { overflow-wrap: anywhere; }
 .empty { padding: 16px 12px; color: var(--ink-soft); font-size: 13px; }
 .who { font-weight: 500; }
 .s-WEST { color: var(--west); } .s-EAST { color: var(--east); } .s-GUER { color: var(--guer); } .s-CIV { color: var(--civ); }
@@ -216,6 +218,7 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
         <button role="tab" id="tab-events" aria-selected="true">Events</button>
         <button role="tab" id="tab-units" aria-selected="false">Units</button>
         <button role="tab" id="tab-radio" aria-selected="false">Radio</button>
+        <button role="tab" id="tab-chat" aria-selected="false">Chat</button>
         <button role="tab" id="tab-mission" aria-selected="false">Mission</button>
         <button role="tab" id="tab-server" aria-selected="false">Server</button>
         <button role="tab" id="tab-data" aria-selected="false">Data</button>
@@ -229,6 +232,7 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
         <div class="roster" id="roster"></div>
       </div>
       <div class="pane" id="pane-radio" hidden></div>
+      <div class="pane" id="pane-chat" hidden></div>
       <div class="pane" id="pane-mission" hidden></div>
       <div class="pane" id="pane-server" hidden></div>
       <div class="pane" id="pane-data" hidden></div>
@@ -255,7 +259,7 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
   const SPEEDS = [1, 2, 4, 8, 16];
   const FILTERS = [
     ["kills", "Kills", true], ["hits", "Hits", true], ["vehicles", "Vehicles", true],
-    ["players", "Players", true], ["radio", "Radio", true], ["markers", "Markers", true], ["ai", "AI", true], ["world", "World", true],
+    ["players", "Players", true], ["radio", "Radio", true], ["chat", "Chat", true], ["markers", "Markers", true], ["ai", "AI", true], ["world", "World", true],
     ["shots", "Shots", false],
   ];
   // Record types the parser files somewhere other than the event feed.
@@ -274,7 +278,7 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
   // Map elements that can be switched off: [key, label].
   const LAYERS = [
     ["units", "Units"], ["vehicles", "Vehicles"], ["groups", "Group markers"], ["tracers", "Tracers"],
-    ["hits", "Hits and kills"], ["labels", "Event labels"], ["detections", "AI detections"], ["radio", "Radio"],
+    ["hits", "Hits and kills"], ["labels", "Event labels"], ["detections", "AI detections"], ["radio", "Radio"], ["chat", "Chat"],
     ["markers", "Map markers"], ["coverMap", "Cover map"], ["buildings", "Destroyed buildings"],
     ["tiles", "Terrain"], ["grid", "Grid"],
   ];
@@ -282,7 +286,7 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
 
   const KNOWN = new Set(["end", "group", "player", "shot", "proj_hit", "proj_splash", "killed", "hit", "loadout", "perf_spike", "idle", "building",
     "marker_created", "marker_updated", "marker_deleted", "get_in", "get_out", "seat", "respawn", "connected", "disconnected", "combat_mode", "enemy_detected", "fleeing",
-    "radio_tx", "radios", "cover_map"]);
+    "radio_tx", "radios", "cover_map", "chat"]);
 
   // AI group state from combat_mode / enemy_detected / fleeing, keyed by side and group name.
   const groupKey = (side, name) => side + "|" + name;
@@ -303,7 +307,7 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
   function parse(text, label) {
     const r = { header: {}, end: null, entities: new Map(), shots: new Map(), hits: [], kills: [], events: [], duration: 0, label,
       counts: new Map(), raw: new Map(), orbat: null, perf: [], spikes: [], idle: [], markers: new Map(), coverMaps: new Map(), buildings: [], damage: [], groupInfo: new Map(), detections: [],
-      tx: [], nets: null, groupShort: new Map(), groupIcon: new Map() };
+      tx: [], chat: [], nets: null, groupShort: new Map(), groupIcon: new Map() };
     const openTx = new Map();   // "unit|radio id" -> transmission still going
     const closeTx = (k, time) => { const x = openTx.get(k); if (x) { x.t1 = time; openTx.delete(k); } };
     const ent = id => {
@@ -366,6 +370,7 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
           if (o.changes.length) r.events.push(o);
           break;
         }
+        case "chat": r.chat.push(o); r.events.push(o); break;
         case "radio_nets": r.nets = Array.isArray(o.nets) ? o.nets : null; break;
         case "loadout": { const e = ent(o.unit); for (const k of ["role", "role_name", "loadout_faction"]) if (o[k] !== undefined) e[k] = o[k]; r.events.push(o); break; }
         case "orbat": r.orbat = o; break;
@@ -455,6 +460,7 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
       for (const team of r.orbat.teams) walk(team, team, []);
     }
     r.tx.sort((a, b) => a.t0 - b.t0);
+    r.chat.sort((a, b) => a.t - b.t);
     // Transmissions with no end (the player left, the file was cut) are shown for at most 30 s.
     for (const x of r.tx) if (x.t1 === null) { x.t1 = Math.min(r.duration, x.t0 + 30); x.open = true; }
     r.txMax = r.tx.reduce((m, x) => Math.max(m, x.t1 - x.t0), 0);
@@ -535,7 +541,7 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
   let C = {};
   function readColors() {
     const cs = getComputedStyle(document.documentElement);
-    for (const k of ["ground", "panel", "ink", "ink-soft", "rule", "grid", "grid-major", "accent", "west", "east", "guer", "civ", "dead", "radio"]) C[k] = cs.getPropertyValue("--" + k).trim();
+    for (const k of ["ground", "panel", "ink", "ink-soft", "rule", "grid", "grid-major", "accent", "west", "east", "guer", "civ", "dead", "radio", "chat"]) C[k] = cs.getPropertyValue("--" + k).trim();
   }
   const sideColor = s => ({ WEST: C.west, EAST: C.east, GUER: C.guer, CIV: C.civ })[s] || C["ink-soft"];
   // Arma marker colour classes; anything unknown is drawn in the soft ink colour.
@@ -546,6 +552,11 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
     ColorKhaki: "#809966", ColorPink: "#ff4d66", ColorWhite: "#ffffff", ColorGrey: "#808080", ColorUNKNOWN: "#b39900" };
   const markerColor = c => MARKER_RGB[c] || C[MARKER_COLORS[c] || "ink-soft"];
   const sideName = s => ({ WEST: "BLUFOR", EAST: "OPFOR", GUER: "Independent", CIV: "Civilian" })[s] || s;
+  // Arma chat channel numbers; 6-15 are the mission's custom channels.
+  const CHAT_CHANNELS = ["Global", "Side", "Command", "Group", "Vehicle", "Direct"];
+  const chatChannel = o => o.channel_name || CHAT_CHANNELS[o.channel] || (o.channel >= 6 && o.channel <= 15 ? "Custom " + (o.channel - 5) : o.channel === 16 ? "System" : o.channel === 17 ? "BattlEye" : "Channel " + o.channel);
+  // The sender of a chat message: the unit when it was recorded, else the name sent with it.
+  const chatSender = o => o.unit ? who(o.unit, o.t) : o.name || o.from ? '<span class="who">' + esc(o.name || o.from) + "</span>" : "";
 
   // ---------- formatting ----------
   const fmt = s => { s = Math.max(0, s); const m = Math.floor(s / 60), x = Math.floor(s % 60); return String(m).padStart(2, "0") + ":" + String(x).padStart(2, "0"); };
@@ -942,6 +953,7 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
     if (layers.groups) drawGroups(ctx, states);
     drawEvents(ctx);
     if (layers.radio) drawRadio(ctx);
+    if (layers.chat) drawChat(ctx);
 
     // hit flashes
     if (layers.hits) for (const h of rec.hits) {
@@ -1235,6 +1247,28 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
   }
 
   // Units on the radio: waves around the speaker and the channel name, at every zoom level.
+  // What a unit typed in the last few seconds, next to it on the map.
+  const CHAT_SHOWN = 6;
+  function drawChat(ctx) {
+    const font = getComputedStyle(document.body).getPropertyValue("--font-ui");
+    const said = new Map();
+    for (let i = idx(rec.chatTimes, t); i >= 0; i--) {
+      const o = rec.chat[i];
+      if (t - o.t > CHAT_SHOWN) break;
+      if (o.unit && !said.has(o.unit)) said.set(o.unit, o);
+    }
+    ctx.font = "12px " + font; ctx.textAlign = "left"; ctx.textBaseline = "middle";
+    for (const [id, o] of said) {
+      const e = rec.entities.get(id), st = e && stateAt(e, t); if (!st) continue;
+      const v = st.veh && rec.entities.get(st.veh), vs = v && stateAt(v, t);
+      const [sx, sy] = vs ? toScreen(vs.x, vs.y) : toScreen(st.x, st.y);
+      const text = o.text.length > 60 ? o.text.slice(0, 59) + "…" : o.text;
+      ctx.globalAlpha = Math.min(1, (CHAT_SHOWN - (t - o.t)) / 1.5);
+      halo(ctx, "“" + text + "”", sx + 12, sy - 14, C.chat);
+    }
+    ctx.globalAlpha = 1;
+  }
+
   function drawRadio(ctx) {
     const font = getComputedStyle(document.body).getPropertyValue("--font-data");
     const seen = new Set();
@@ -1284,6 +1318,9 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
         tctx.fillStyle = C.radio; tctx.globalAlpha = .8;
         for (const x of rec.tx) tctx.fillRect(x.t0 / D * w, 19, Math.max(1, (x.t1 - x.t0) / D * w), 4);
         tctx.globalAlpha = 1;
+        // Chat: a tick per message, under the radio bars.
+        tctx.fillStyle = C.chat;
+        for (const o of rec.chat) tctx.fillRect(o.t / D * w - .5, 24, 1.5, 5);
         tctx.fillStyle = C.accent;
         for (const k of rec.spikes) { const x = k.t / D * w; tctx.fillRect(x - 1, h - 20, 2, 12); }
         tctx.fillStyle = C["ink-soft"]; tctx.font = "10px " + getComputedStyle(document.body).getPropertyValue("--font-data"); tctx.textBaseline = "bottom";
@@ -1325,6 +1362,10 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
         const name = x => esc(x.radio_name || x.radio) + (radioLabel(x) ? ' <span class="tag">' + esc(radioLabel(x)) + "</span>" : "");
         const parts = o.changes.map(([k, x]) => k === "has" ? name(x) : k === "new" ? "picked up " + name(x) : k === "tuned" ? "set " + name(x) : "dropped " + esc(x.radio_name || x.radio));
         return ["radio", who(o.unit, o.t) + (o.changes[0][0] === "has" ? " carries " : " ") + parts.join(", ")];
+      }
+      case "chat": {
+        const from = chatSender(o);
+        return ["chat", (from ? from + " " : "") + '<span class="tag" style="color:var(--chat)">' + esc(chatChannel(o)) + '</span>: <span class="said">' + esc(o.text) + "</span>"];
       }
       case "building": return ["world", (o.ruin ? "Building destroyed" : "Building changed") + ' <span class="tag">' + esc(o.from) + "</span>" + (o.pos ? ' <span class="tag">' + grid(o.pos[0], o.pos[1]) + "</span>" : "")];
       case "idle": return ["world", o.idle ? "Server empty, recording paused" : "Players back, recording resumed"];
@@ -1541,6 +1582,38 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
     pane.innerHTML = html;
   }
   $("pane-radio").addEventListener("change", e => { if (e.target.id === "allnets") { prefs.allNets = e.target.checked; savePrefs(); renderRadio(); } });
+
+  // ---------- chat tab ----------
+  function renderChat() {
+    const pane = $("pane-chat");
+    if (!rec.chat.length) {
+      pane.innerHTML = '<div class="empty">No chat in this recording.</div>';
+      return;
+    }
+    const tile = (v, label) => "<div><b>" + v + "</b><small>" + label + "</small></div>";
+    const chans = new Map(), people = new Set();
+    for (const o of rec.chat) {
+      const c = chatChannel(o); chans.set(c, (chans.get(c) || 0) + 1);
+      if (o.player) people.add(o.unit || o.name || o.from);
+    }
+    const hidden = new Set(prefs.chatHidden || []);
+    const shown = rec.chat.filter(o => !hidden.has(chatChannel(o)));
+    const LIMIT = 2000;
+    pane.innerHTML = '<div class="sec"><div class="stats">' + tile(rec.chat.length, "messages") + tile(people.size, "people wrote") + tile(chans.size, chans.size === 1 ? "channel" : "channels") + "</div></div>" +
+      '<div class="filters">' + [...chans].sort((a, b) => b[1] - a[1]).map(([c, n]) =>
+        '<label><input type="checkbox" data-chan="' + esc(c) + '"' + (hidden.has(c) ? "" : " checked") + ">" + esc(c) + " (" + n + ")</label>").join("") + "</div>" +
+      '<ol class="feed">' + shown.slice(0, LIMIT).map(o => {
+        const from = chatSender(o);
+        return '<li data-t="' + o.t + '"><time>' + fmt(o.t) + '</time><div><span class="tag" style="color:var(--chat)">' + esc(chatChannel(o)) + "</span> " + (from ? from + ": " : "") + '<span class="said">' + esc(o.text) + "</span></div></li>";
+      }).join("") + "</ol>" +
+      (shown.length > LIMIT ? '<p class="tag">First ' + LIMIT + " of " + shown.length + " shown; the Data tab has them all.</p>" : "");
+  }
+  $("pane-chat").addEventListener("change", e => {
+    const c = e.target.dataset.chan; if (c === undefined) return;
+    const hidden = new Set(prefs.chatHidden || []);
+    if (e.target.checked) hidden.delete(c); else hidden.add(c);
+    prefs.chatHidden = [...hidden]; savePrefs(); renderChat();
+  });
 
   // ---------- map layers ----------
   function renderLayers() {
@@ -1773,6 +1846,7 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
     try {
       const r = parse(text, label);
       r.eventTimes = r.events.map(e => [e.t]);
+      r.chatTimes = r.chat.map(o => [o.t]);
       r.perfTimes = r.perf.map(p => [p.t]);
       const world = String(r.header.world || "").toLowerCase();
       loadTerrain(world, +r.header.world_size || WORLD_SIZES[world] || 0);
@@ -1782,7 +1856,7 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
       unitMode = r.orbat ? "orbat" : "groups"; $("unitmode").hidden = !r.orbat; setUnitMode(unitMode);
       dataType = null; dataLimit = 100; dataQuery = "";
       renderMeta(); resize(); readColors(); fit(); feedKey = ""; renderFeed(true); renderRoster(true); renderCard(true);
-      renderRadio(); renderMission(); renderServer(); renderData(); drawCharts();
+      renderRadio(); renderChat(); renderMission(); renderServer(); renderData(); drawCharts();
       tlDirty = true;
     } catch (err) {
       $("error").textContent = err.message; $("error").hidden = false;
@@ -1801,7 +1875,7 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
   $("filters").onchange = e => { filters[e.target.id.slice(2)] = e.target.checked; renderFeed(true); };
   $("feed").onclick = e => { const li = e.target.closest("li[data-t]"); if (li) { t = +li.dataset.t; } };
   $("pane-units").onclick = e => { const b = e.target.closest("button[data-id]"); if (!b) return; const id = +b.dataset.id; select(id === selected ? 0 : id); const en = rec.entities.get(id), s = en && stateAt(en, t); if (s && id) { view.cx = s.x; view.cy = s.y; } };
-  const TABS = ["events", "units", "radio", "mission", "server", "data"];
+  const TABS = ["events", "units", "radio", "chat", "mission", "server", "data"];
   for (const name of TABS) {
     $("tab-" + name).onclick = () => {
       for (const x of TABS) { $("tab-" + x).setAttribute("aria-selected", x === name); $("pane-" + x).hidden = x !== name; }
@@ -1811,7 +1885,7 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
   function setUnitMode(m) { unitMode = m; for (const b of $("unitmode").children) b.setAttribute("aria-pressed", b.dataset.m === m); renderRoster(true); }
   $("unitmode").onclick = e => { const b = e.target.closest("button[data-m]"); if (b) setUnitMode(b.dataset.m); };
   // Anything with a time in the Mission, Server and Data tabs seeks there when clicked.
-  for (const name of ["radio", "mission", "server", "data"]) $("pane-" + name).addEventListener("click", e => { const x = e.target.closest("[data-t]"); if (x && rec) t = Math.min(rec.duration, +x.dataset.t); });
+  for (const name of ["radio", "chat", "mission", "server", "data"]) $("pane-" + name).addEventListener("click", e => { const x = e.target.closest("[data-t]"); if (x && rec) t = Math.min(rec.duration, +x.dataset.t); });
   $("pane-data").addEventListener("click", e => {
     const tr = e.target.closest("tr[data-type]");
     if (tr) { dataType = tr.dataset.type; dataLimit = 100; for (const r of $("types").querySelectorAll("tr[data-type]")) r.setAttribute("aria-selected", r === tr); renderDataList(); $("dq").scrollIntoView({ block: "start" }); }

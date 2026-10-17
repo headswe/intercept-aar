@@ -47,6 +47,9 @@ class CfgFunctions {
             class skipMarker {};
             class marker {};
             class markerClient { headerType = -1; };  // sent to clients as code, so no function header
+            class chat {};
+            class chatReport {};
+            class chatClient { headerType = -1; };  // sent to clients as code, so no function header
             class coverMap {};
             class stop {};
         };
@@ -55,9 +58,10 @@ class CfgFunctions {
 
 // Clients report radio transmissions (aar_fnc_radio), their markers off the Global channel
 // (aar_fnc_marker), the projectiles their units fire (aar_fnc_projectileReport), hits on their
-// units and vehicles (aar_fnc_hitReport) and the AI events of the groups they run
-// (aar_fnc_groupEvent) to the server. Allowed here for servers that
-// whitelist remote execution; a mission with its own CfgRemoteExec in whitelist mode must list it too.
+// units and vehicles (aar_fnc_hitReport), the chat messages they type (aar_fnc_chatReport) and
+// the AI events of the groups they run (aar_fnc_groupEvent) to the server. Allowed here for
+// servers that whitelist remote execution; a mission with its own CfgRemoteExec in whitelist
+// mode must list it too.
 class CfgRemoteExec {
     class Functions {
         class aar_fnc_radio { allowedTargets = 2; jip = 0; };
@@ -65,5 +69,6 @@ class CfgRemoteExec {
         class aar_fnc_projectileReport { allowedTargets = 2; jip = 0; };
         class aar_fnc_groupEvent { allowedTargets = 2; jip = 0; };
         class aar_fnc_hitReport { allowedTargets = 2; jip = 0; };
+        class aar_fnc_chatReport { allowedTargets = 2; jip = 0; };
     };
 };
