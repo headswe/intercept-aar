@@ -50,20 +50,10 @@ if (aar_tmf) then { _fields append ([_obj, _kind] call aar_fnc_tmfFields) };
 ["entity", _fields] call aar_fnc_rec;
 
 if (aar_logHits) then {
-    // Hit fires only where the object is local, so it covers server AI. Once the object is
-    // remote (a player, headless client AI) the server switches to MPHit, which the owner raises
-    // and broadcasts, so the hit is the owner's authoritative result rather than the server's
-    // copy of the bullet.
-    _obj addEventHandler ["Hit", {
-        params ["_unit"];
-        if (_unit getVariable ["aar_mpHit", false]) exitWith {};
-        _this call aar_fnc_hit;
-    }];
-    if (!local _obj) then { _obj call aar_fnc_addMPHit };
-    _obj addEventHandler ["Local", {
-        params ["_entity", "_isLocal"];
-        if (!_isLocal) then { _entity call aar_fnc_addMPHit };
-    }];
+    // Hit fires only where the object is local, so this covers server AI; players and headless
+    // clients report hits on their own objects (aar_fnc_hitClient). Not MPHit: the engine
+    // broadcasts that to every machine on every hit.
+    _obj addEventHandler ["Hit", { _this call aar_fnc_hit }];
 };
 
 if (!_isUnit) then {
