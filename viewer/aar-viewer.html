@@ -617,10 +617,10 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
   // maps worlds that borrow another terrain's tiles to that slug. The tile host sends no CORS headers, so the
   // published viewer carries copies of both (#terrains, fetched by the Pages build). For a world not in that copy
   // it tries the live configs, which only work same-origin or once CORS is added, and then falls back to the
-  // header's world size and the built-in alias table below.
+  // header's world size. The built-in alias table below wins over MissionDB's alias map.
   // Missing tiles (sea, or slow deep zooms) fall back to the nearest parent tile. ?tiles=<base> overrides the host.
   const WORLD_SIZES = { altis: 30720, stratis: 8192, tanoa: 15360, malden: 12800, enoch: 12800, vr: 8192 };
-  const TILE_ALIASES = { baranowwinter: "baranow", chernarus_summer: "chernarus", gm_weferlingen_winter: "gm_weferlingen_summer",
+  const TILE_ALIASES = { baranowwinter: "baranow", chernarus_summer: "chernarus", chernarus_winter: "chernarus", gm_weferlingen_winter: "gm_weferlingen_summer",
     panovowinter: "panovo", staszowwinter: "staszow", tem_chamw: "tem_cham" };
   const tiles = { base: new URLSearchParams(location.search).get("tiles") || "https://mission-db.1tac.eu/tiles/",
     world: "", slug: "", width: 0, height: 0, ppm: 1, native: 0, minZoom: 0, maxZoom: 0, version: "", bg: "" };
@@ -653,11 +653,11 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
     const get = async u => { const res = await fetch(u); if (!res.ok) throw new Error(res.status); return res.json(); };
     let slug = TILE_ALIASES[world] || world;
     if (baked) {
-      slug = (baked.aliases || {})[world] || slug;
+      slug = TILE_ALIASES[world] || (baked.aliases || {})[world] || world;
       const cfg = (baked.terrains || {})[slug];
       if (cfg) { setTerrain(world, size, { ...cfg, name: slug }); return; }
     } else {
-      try { const map = await get(tiles.base + "config.json"); slug = map[world] || world; } catch {}
+      try { const map = await get(tiles.base + "config.json"); slug = TILE_ALIASES[world] || map[world] || world; } catch {}
     }
     let cfg = null;
     try { cfg = { ...await get(tiles.base + encodeURIComponent(slug) + "/config.json"), name: slug }; } catch {}
