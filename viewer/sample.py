@@ -51,7 +51,11 @@ rec(0, "radio_nets", source="tmf", nets=[
         {"name": "PLTNET", "description": "Platoon net", "radio": "ACRE_PRC152", "shared": False, "number": 1, "freq": 60.15},
         {"name": "ALPHA", "description": "Alpha squad", "radio": "ACRE_PRC343", "shared": False, "number": 1, "freq": 2400.13},
         {"name": "BRAVO", "description": "Bravo squad", "radio": "ACRE_PRC343", "shared": False, "number": 2, "freq": 2400.23},
-        {"name": "FIRES", "description": "Fire support", "radio": "ACRE_PRC152", "shared": True, "number": 2, "freq": 61.15}]},
+        {"name": "FIRES", "description": "Fire support", "radio": "ACRE_PRC152", "shared": True, "number": 2, "freq": 61.15},
+        {"name": "LOGNET", "description": "Logistics", "radio": "ACRE_PRC152", "shared": False, "number": 3, "freq": 62.15}]},
+    # Preset nobody used: hidden in the Radio tab until "Show unused" is ticked.
+    {"index": 1, "sides": ["EAST"], "factions": [], "channels": [
+        {"name": "COY", "description": "Company net", "radio": "ACRE_PRC148", "shared": False, "number": 1, "freq": 50.15}]},
 ])
 SHORT = {"PLT HQ": "HQ", "Alpha 1": "A1", "Alpha 2": "A2", "Bravo": "B"}
 # TMF_groupMarker textures: [icon, size]

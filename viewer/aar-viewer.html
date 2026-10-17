@@ -48,6 +48,7 @@
 html, body { height: 100%; }
 body { background: var(--ground); color: var(--ink); font-family: var(--font-ui); font-size: 14px; }
 * { box-sizing: border-box; }
+[hidden] { display: none !important; }
 button, select { font: inherit; color: inherit; }
 button { cursor: pointer; }
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
@@ -69,6 +70,12 @@ main { display: grid; grid-template-columns: minmax(0, 1fr) 390px; gap: 0; min-h
 .board canvas.dragging { cursor: grabbing; }
 .zoom { position: absolute; right: 10px; top: 10px; display: flex; flex-direction: column; gap: 4px; }
 .zoom .btn { width: 32px; height: 32px; padding: 0; font-family: var(--font-data); }
+.zoom .btn[aria-expanded="true"] { background: var(--ink); color: var(--ground); border-color: var(--ink); }
+.layers { position: absolute; right: 52px; top: 10px; z-index: 3; background: var(--panel); border: 1px solid var(--rule); border-radius: 6px; padding: 8px 12px 10px; font-size: 13px; box-shadow: 0 6px 18px rgba(0,0,0,.12); display: grid; grid-template-columns: repeat(2, max-content); gap: 3px 16px; }
+.layers h3 { grid-column: 1 / -1; font-family: var(--font-display); font-size: 13px; letter-spacing: .1em; text-transform: uppercase; margin: 0 0 3px; }
+.layers label { display: inline-flex; gap: 6px; align-items: center; cursor: pointer; white-space: nowrap; }
+.layers .row { grid-column: 1 / -1; display: flex; gap: 6px; margin-top: 6px; }
+.layers .row .btn { padding: 2px 8px; font-size: 12px; }
 .scale { position: absolute; left: 12px; bottom: 10px; font-family: var(--font-data); font-size: 11px; color: var(--ink-soft); }
 .scale em { font-style: normal; color: var(--east); margin-left: 8px; }
 .scale i { display: block; height: 4px; border: 1px solid var(--ink-soft); border-top: 0; margin-bottom: 3px; }
@@ -90,6 +97,7 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
 .pane { overflow-y: auto; min-height: 0; }
 .filters { display: flex; flex-wrap: wrap; gap: 4px 10px; padding: 8px 12px; border-bottom: 1px solid var(--rule); font-size: 12px; color: var(--ink-soft); position: sticky; top: 0; background: var(--panel); }
 .filters label { display: inline-flex; gap: 4px; align-items: center; cursor: pointer; }
+.pane .filters { position: sticky; top: 0; z-index: 1; }
 .feed { list-style: none; margin: 0; padding: 0; }
 .feed li { display: grid; grid-template-columns: 52px 1fr; gap: 8px; padding: 6px 12px; border-bottom: 1px solid var(--rule); cursor: pointer; font-size: 13px; line-height: 1.35; }
 .feed li:hover { background: color-mix(in srgb, var(--accent) 8%, transparent); }
@@ -202,7 +210,11 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
         <button class="btn" id="zin" aria-label="Zoom in">+</button>
         <button class="btn" id="zout" aria-label="Zoom out">−</button>
         <button class="btn" id="zfit" aria-label="Fit to recording">⤢</button>
+        <button class="btn" id="layerbtn" aria-label="Map layers" aria-expanded="false" aria-controls="layers" title="Show or hide map elements">
+          <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" d="M8 2 1.5 5.5 8 9l6.5-3.5zM1.5 8.5 8 12l6.5-3.5M1.5 11.2 8 14.7l6.5-3.5"/></svg>
+        </button>
       </div>
+      <div class="layers" id="layers" hidden></div>
       <div class="scale" id="scale"><i></i><span></span> <em id="tilenote"></em></div>
       <div class="card" id="card" hidden></div>
     </div>
@@ -262,6 +274,19 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
   let selected = 0, follow = false;
   let view = { cx: 0, cy: 0, scale: 1 };   // world centre and pixels per metre
   const filters = Object.fromEntries(FILTERS.map(f => [f[0], f[2]]));
+
+  // Viewer choices kept between visits; storage can be missing (private windows, blocked site data).
+  const PREFS_KEY = "aar-viewer-prefs";
+  const prefs = (() => { try { return JSON.parse(localStorage.getItem(PREFS_KEY)) || {}; } catch { return {}; } })();
+  const savePrefs = () => { try { localStorage.setItem(PREFS_KEY, JSON.stringify(prefs)); } catch {} };
+  // Map elements that can be switched off: [key, label].
+  const LAYERS = [
+    ["units", "Units"], ["vehicles", "Vehicles"], ["groups", "Group markers"], ["tracers", "Tracers"],
+    ["hits", "Hits and kills"], ["labels", "Event labels"], ["detections", "AI detections"], ["radio", "Radio"],
+    ["markers", "Map markers"], ["coverMap", "Cover map"], ["buildings", "Destroyed buildings"],
+    ["tiles", "Terrain"], ["grid", "Grid"],
+  ];
+  const layers = Object.fromEntries(LAYERS.map(([k]) => [k, !(prefs.layers && prefs.layers[k] === false)]));
 
   const KNOWN = new Set(["end", "group", "player", "shot", "proj_hit", "proj_splash", "killed", "hit", "loadout", "perf_spike", "idle", "building",
     "marker_created", "marker_updated", "marker_deleted", "get_in", "get_out", "seat", "respawn", "connected", "disconnected", "combat_mode", "enemy_detected", "fleeing",
@@ -836,13 +861,13 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
     ctx.fillStyle = C.ground; ctx.fillRect(0, 0, W, H);
     if (!rec) return;
     if (follow && selected) { const e = rec.entities.get(selected), s = e && stateAt(e, t); if (s) { view.cx = s.x; view.cy = s.y; } }
-    drawTiles();
-    drawGrid();
-    drawMarkerAreas(ctx);
-    drawCoverMaps(ctx);
+    if (layers.tiles) drawTiles();
+    if (layers.grid) drawGrid();
+    if (layers.markers) drawMarkerAreas(ctx);
+    if (layers.coverMap) drawCoverMaps(ctx);
 
     // kill sites
-    for (const k of rec.kills) {
+    if (layers.hits) for (const k of rec.kills) {
       if (k.t > t || !k.pos) continue;
       const [sx, sy] = toScreen(k.pos[0], k.pos[1]);
       const age = t - k.t;
@@ -852,7 +877,7 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
     }
 
     // destroyed buildings
-    for (const b of rec.buildings) {
+    if (layers.buildings) for (const b of rec.buildings) {
       if (b.t > t || !b.pos) continue;
       const [sx, sy] = toScreen(b.pos[0], b.pos[1]);
       ctx.strokeStyle = C.dead; ctx.lineWidth = 1.5; ctx.strokeRect(sx - 5, sy - 5, 10, 10);
@@ -860,11 +885,11 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
     }
 
     // map markers (icons and their text; areas and lines are drawn under the units, above)
-    drawMarkerIcons(ctx);
+    if (layers.markers) drawMarkerIcons(ctx);
 
     // tracers
     ctx.lineCap = "round";
-    for (const s of rec.shotList) {
+    if (layers.tracers) for (const s of rec.shotList) {
       if (s.t0 > t) break;
       const t1 = s.t1 ?? s.t0 + 3;
       if (t > t1 + 0.35) continue;
@@ -897,13 +922,13 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
       if (e.kind === "unit" && s.veh && s.alive) crew.set(s.veh, (crew.get(s.veh) || 0) + 1);
     }
     for (const [e, s] of states) {
-      if (e.kind === "unit") continue;
+      if (e.kind === "unit" || !layers.vehicles) continue;
       const [sx, sy] = toScreen(s.x, s.y);
       drawVehicle(ctx, sx, sy, s.dir, sideColor(sideAt(e, t)), s.alive, crew.get(e.id) || 0, e.id === selected, e.kind);
       drawn.push([e.id, sx, sy]);
     }
     for (const [e, s] of states) {
-      if (e.kind !== "unit" || (s.veh && s.alive)) continue;
+      if (e.kind !== "unit" || (s.veh && s.alive) || !layers.units) continue;
       const [sx, sy] = toScreen(s.x, s.y);
       const isP = isPlayerAt(e, t);
       drawUnit(ctx, sx, sy, s.dir, sideColor(sideAt(e, t)), s.alive, isP, e.id === selected);
@@ -914,12 +939,13 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
       }
     }
 
-    drawGroups(ctx, states);
+    groupHits = [];
+    if (layers.groups) drawGroups(ctx, states);
     drawEvents(ctx);
-    drawRadio(ctx);
+    if (layers.radio) drawRadio(ctx);
 
     // hit flashes
-    for (const h of rec.hits) {
+    if (layers.hits) for (const h of rec.hits) {
       if (h.t > t || t - h.t > 0.6) continue;
       const e = rec.entities.get(h.target), s = e && stateAt(e, t); if (!s) continue;
       const [sx, sy] = toScreen(s.x, s.y);
@@ -1181,7 +1207,7 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
   function drawEvents(ctx) {
     const font = getComputedStyle(document.body).getPropertyValue("--font-data");
     // Detection lines from the spotting group's leader to the enemy.
-    for (const o of rec.detections) {
+    if (layers.detections) for (const o of rec.detections) {
       if (o.t > t || t - o.t > EVENT_SECONDS) continue;
       const a = rec.entities.get(o.leader), b = rec.entities.get(o.target);
       const sa = a && stateAt(a, t), sb = b && stateAt(b, t); if (!sa || !sb) continue;
@@ -1192,6 +1218,7 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
       ctx.beginPath(); ctx.arc(bx, by, 10, 0, Math.PI * 2); ctx.stroke();
       ctx.globalAlpha = 1;
     }
+    if (!layers.labels) return;
     const i1 = idx(rec.eventTimes, t);
     const stack = new Map();   // entity id -> labels already drawn there
     ctx.textAlign = "center"; ctx.textBaseline = "bottom"; ctx.font = "600 11px " + font;
@@ -1472,16 +1499,22 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
       if (!talkers.has(name)) talkers.set(name, { name, side: e ? sideAt(e, x.t0) : "", n: 0, time: 0, chans: new Map() });
       const p = talkers.get(name); p.n++; p.time += len(x); p.chans.set(x.label, (p.chans.get(x.label) || 0) + 1);
     }
-    let html = '<div class="sec"><div class="stats">' +
+    // TMF networks list every preset channel; by default only those someone transmitted on are shown.
+    const all = !!prefs.allNets;
+    const unused = rec.nets ? rec.nets.reduce((a, net) => a + (net.channels || []).filter(ch => !chans.has(ch)).length, 0) : 0;
+    let html = (unused ? '<div class="filters"><label><input type="checkbox" id="allnets"' + (all ? " checked" : "") + ">Show unused nets and channels (" + unused + ")</label></div>" : "") +
+      '<div class="sec"><div class="stats">' +
       tile(rec.tx.length, "transmissions") + tile(secs(rec.tx.reduce((a, x) => a + len(x), 0)), "on air in total") + tile(talkers.size, "people talked") + "</div></div>";
 
     if (rec.nets) {
       for (const net of rec.nets) {
+        const shown = (net.channels || []).map((ch, i) => [ch, i]).filter(([ch]) => all || chans.has(ch));
+        if (!shown.length) continue;
         const members = [...rec.entities.values()].filter(e => e.radio_net === net.index).length;
         const who = [...(net.sides || []).map(sideName), ...(net.factions || [])].join(", ");
         html += '<div class="sec"><h3>Network ' + (net.index + 1) + (who ? " · " + esc(who) : "") + "</h3>" +
           '<table class="tbl"><tr><th>Channel</th><th>Radio</th><th class="n">MHz</th><th class="n">Tx</th><th class="n">On air</th><th class="n">Units</th></tr>' +
-          (net.channels || []).map((ch, i) => {
+          shown.map(([ch, i]) => {
             const c = chans.get(ch), on = [...rec.entities.values()].filter(e => e.radio_net === net.index && (e.radio_channels || []).includes(i)).length;
             return "<tr><td>" + esc(ch.name) + (ch.description ? " <small>" + esc(ch.description) + "</small>" : "") + (ch.shared ? ' <span class="tag">shared</span>' : "") + "</td><td>" + esc(String(ch.radio || "").replace(/^ACRE_/, "")) +
               '</td><td class="n">' + (typeof ch.freq === "number" ? +ch.freq.toFixed(4) : "–") + '</td><td class="n">' + (c ? c.n : 0) + '</td><td class="n">' + (c ? secs(c.time) : "–") + '</td><td class="n">' + on + "</td></tr>";
@@ -1508,6 +1541,32 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
     }
     pane.innerHTML = html;
   }
+  $("pane-radio").addEventListener("change", e => { if (e.target.id === "allnets") { prefs.allNets = e.target.checked; savePrefs(); renderRadio(); } });
+
+  // ---------- map layers ----------
+  function renderLayers() {
+    $("layers").innerHTML = "<h3>Show on map</h3>" +
+      LAYERS.map(([k, label]) => '<label><input type="checkbox" data-layer="' + k + '"' + (layers[k] ? " checked" : "") + ">" + label + "</label>").join("") +
+      '<div class="row"><button class="btn" data-all="1">All</button><button class="btn" data-all="0">None</button></div>';
+  }
+  function setLayer(k, on) {
+    layers[k] = on;
+    prefs.layers = Object.fromEntries(LAYERS.filter(([x]) => !layers[x]).map(([x]) => [x, false]));
+    savePrefs();
+  }
+  $("layers").addEventListener("change", e => { const k = e.target.dataset.layer; if (k) setLayer(k, e.target.checked); });
+  $("layers").addEventListener("click", e => {
+    const b = e.target.closest("button[data-all]"); if (!b) return;
+    for (const [k] of LAYERS) setLayer(k, b.dataset.all === "1");
+    renderLayers();
+  });
+  $("layerbtn").onclick = () => {
+    const open = $("layers").hidden; $("layers").hidden = !open; $("layerbtn").setAttribute("aria-expanded", open);
+    if (open) renderLayers();
+  };
+  addEventListener("pointerdown", e => {
+    if (!$("layers").hidden && !e.target.closest("#layers, #layerbtn")) { $("layers").hidden = true; $("layerbtn").setAttribute("aria-expanded", false); }
+  });
 
   // ---------- mission tab ----------
   const pad2 = n => String(n).padStart(2, "0");
@@ -1821,7 +1880,7 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
     else if (e.key === "ArrowLeft") t = Math.max(0, t - (e.shiftKey ? 30 : 5));
     else if (e.key === "]") { const i = SPEEDS.indexOf(speed); if (i < SPEEDS.length - 1) $("speed").children[i + 1].click(); }
     else if (e.key === "[") { const i = SPEEDS.indexOf(speed); if (i > 0) $("speed").children[i - 1].click(); }
-    else if (e.key === "Escape") select(0);
+    else if (e.key === "Escape") { if (!$("layers").hidden) $("layerbtn").click(); else select(0); }
   });
 
   // theme changes
