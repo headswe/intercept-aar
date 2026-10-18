@@ -3,7 +3,8 @@
  * of entities per frame, sized so the recorder's work in one frame stays near aar_frameBudget
  * milliseconds. Flushes queued records, writes a perf record once per snapshot and a
  * perf_spike record (plus an RPT line) whenever a server frame takes longer than
- * aar_spikeThreshold milliseconds. Pauses snapshots while a dedicated server is empty.
+ * aar_spikeThreshold milliseconds, and a net record every aar_netInterval seconds in
+ * multiplayer. Pauses snapshots and net records while a dedicated server is empty.
  */
 if (!aar_active) exitWith {};
 // Times this handler's work in every frame, read back by the flush at the end.
@@ -43,6 +44,11 @@ if (aar_pauseWhenEmpty && isDedicated) then {
 if (aar_radioNetsPending && {!isNil "tmf_acre2_networksCreated" || time > 30}) then {
     aar_radioNetsPending = false;
     call aar_fnc_radioNets;
+};
+
+if (aar_netInterval > 0 && {isMultiplayer} && {!aar_idle} && {time - aar_lastNet >= aar_netInterval}) then {
+    aar_lastNet = time;
+    call aar_fnc_net;
 };
 
 // Kills still waiting for ACE's credit (see EntityKilled in aar_fnc_init).
