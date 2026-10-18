@@ -11,14 +11,18 @@
  */
 aar_aceExplosive = {
     params ["_action", "_obj", "_unit", ["_class", ""]];
-    if (!aar_active || {isNull _obj}) exitWith {};
+    // A defused or blown up explosive is usually already deleted by the time the event reaches the
+    // server, so it is then recorded at the unit, without its number or class.
+    if (!aar_active || {isNull _obj && {isNull _unit}}) exitWith {};
     private _xid = _obj getVariable ["aar_xid", 0];
-    if (_xid == 0 && {_action != "placed"}) then {
+    if (_xid == 0 && {!isNull _obj} && {_action != "placed"}) then {
         _xid = aar_nextXid;
         aar_nextXid = aar_nextXid + 1;
         _obj setVariable ["aar_xid", _xid];
     };
-    private _fields = ["action", toJSON _action, "class", toJSON ([_class, typeOf _obj] select (_class isEqualTo "")), "pos", (getPosASL _obj) call aar_fnc_pos];
+    if (_class isEqualTo "" && {!isNull _obj}) then { _class = typeOf _obj };
+    private _fields = ["action", toJSON _action, "pos", (getPosASL ([_obj, _unit] select (isNull _obj))) call aar_fnc_pos];
+    if (_class isNotEqualTo "") then { _fields append ["class", toJSON _class] };
     if (_xid != 0) then { _fields append ["explosive", toJSON _xid] };
     private _by = _unit call aar_fnc_id;
     if (_by != 0) then { _fields append ["by", toJSON _by] };

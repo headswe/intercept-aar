@@ -1509,7 +1509,7 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
         (o.by ? " by " + who(o.by, o.t) : "") + (o.pos ? ' <span class="tag">' + grid(o.pos[0], o.pos[1]) + "</span>" : "")];
       case "explosive": {
         const what = { placed: "placed", armed: "armed", defusing: "started defusing", defused: "defused", defuse_exploded: "set off while defusing" }[o.action] || esc(o.action);
-        return ["world", (o.by ? who(o.by, o.t) + " " + what : "Explosive " + what) + ' <span class="tag">' + esc(weaponName(o.class)) + "</span>" +
+        return ["world", (o.by ? who(o.by, o.t) + " " + what : "Explosive " + what) + (o.class ? ' <span class="tag">' + esc(weaponName(o.class)) + "</span>" : "") +
           (o.explosive ? ' <span class="tag">#' + esc(o.explosive) + "</span>" : "") + (o.pos ? ' <span class="tag">' + grid(o.pos[0], o.pos[1]) + "</span>" : "")];
       }
       case "tripflare": return ["world", "Trip flare set off" + (o.pos ? ' <span class="tag">' + grid(o.pos[0], o.pos[1]) + "</span>" : "")];

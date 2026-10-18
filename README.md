@@ -82,7 +82,7 @@ Every line is a JSON object with `type` and `t` (mission time in seconds, from `
 | `drag` | ACE: a unit started or stopped dragging or carrying another unit or object: `unit`, `target`, `how` (`drag`, `carry`), `started`, `pos` |
 | `team` | ACE: a unit was assigned a fireteam colour through ACE's interaction menu: `unit`, `team` (`MAIN`, `RED`, `GREEN`, `BLUE`, `YELLOW`) |
 | `captive` | ACE: a unit was handcuffed, surrendered, or released: `unit`, `captive`, `reason` (`SetHandcuffed`, `SetSurrendered`), `by` (who did it, when known), `pos` |
-| `explosive` | ACE explosives: `action` (`placed` when set down, `armed` when its trigger is set, `defusing`, `defused`, `defuse_exploded`), `class` (the magazine for `placed`, otherwise the explosive's class), `explosive` (a number per armed explosive, to follow it from `armed` to its defusal), `by`, `pos` |
+| `explosive` | ACE explosives: `action` (`placed` when set down, `armed` when its trigger is set, `defusing`, `defused`, `defuse_exploded`), `class` (the magazine for `placed`, otherwise the explosive's class), `explosive` (a number per armed explosive, to follow it from `armed` to its defusal), `by`, `pos`. A defused or blown up explosive is often gone by the time the server hears of it; its record then has the unit's position and no `class` or `explosive` |
 | `tripflare` | ACE trip flare set off: `pos` |
 | `building` | a building or wall changed model, usually destroyed: `from`, `to` (classes), `ruin`, `pos` |
 | `end` | `reason`, `entities` |
