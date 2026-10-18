@@ -17,7 +17,8 @@ aar_rc_acre = !isNil "acre_api_fnc_getCurrentRadioList";
 aar_rc_tfar = !isNil "TFAR_fnc_radiosList";
 if (!aar_rc_acre && !aar_rc_tfar) exitWith {};
 
-aar_rc_send = { _this remoteExecCall ["aar_fnc_radio", 2] };
+// Each report carries CBA_missionTime, so the server records it when it happened.
+aar_rc_send = { (_this + [CBA_missionTime]) remoteExecCall ["aar_fnc_radio", 2] };
 
 aar_rc_acreRadio = {
     params ["_id"];

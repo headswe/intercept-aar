@@ -8,7 +8,7 @@
  * shows it <STRING>, 4: text <STRING>, 5: typed by a player <BOOL>, 6: mission time (default: now) <NUMBER>
  */
 params [["_channel", -1, [0]], ["_person", objNull, [objNull]], ["_name", "", [""]], ["_from", "", [""]],
-    ["_text", "", [""]], ["_player", false, [false]], ["_time", time, [0]]];
+    ["_text", "", [""]], ["_player", false, [false]], ["_time", CBA_missionTime, [0]]];
 
 private _fields = ["channel", toJSON round _channel, "text", toJSON (_text select [0, 1024])];
 if (_channel in [6, 7, 8, 9, 10, 11, 12, 13, 14, 15]) then {

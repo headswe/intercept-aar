@@ -5,7 +5,7 @@
  *
  * Arguments: 0: type <STRING>, 1: [key, value, key, value, ...] <ARRAY>, 2: mission time (default: now) <NUMBER>
  */
-params ["_type", ["_fields", []], ["_time", time]];
+params ["_type", ["_fields", []], ["_time", CBA_missionTime]];
 
 private _parts = ['{"type":"', _type, '","t":', _time toFixed 2];
 for "_i" from 0 to (count _fields - 2) step 2 do {

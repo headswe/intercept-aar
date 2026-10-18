@@ -2,10 +2,11 @@
  * Writes a batch of ACE events reported by a machine (sent by the code in aar_fnc_aceClient,
  * which the server runs too). Entries whose actor the sending machine does not own are dropped.
  *
- *   ["wound", unit, [[body part, damage], ...], shooter, ammo or cause, age]
- *   ["treatment", medic, "started" | "done" | "failed", patient, body part, action class, item used, age]
- *   ["drag", unit, "drag" | "carry", started <BOOL>, target, age]
- *   ["team", unit, colour, age]
+ *   ["wound", unit, [[body part, damage], ...], shooter, ammo or cause, time]
+ *   ["treatment", medic, "started" | "done" | "failed", patient, body part, action class, item used, time]
+ *   ["drag", unit, "drag" | "carry", started <BOOL>, target, time]
+ *   ["team", unit, colour, time]
+ * where time is CBA_missionTime when it happened.
  *
  * Arguments: 0: entries <ARRAY>
  */
@@ -17,8 +18,7 @@ private _sender = if (isMultiplayer && {isRemoteExecuted}) then { remoteExecuted
     if !(_x isEqualType [] && {count _x >= 3}) then { continue };
     _x params [["_kind", "", [""]], ["_actor", objNull, [objNull]]];
     if (isNull _actor || {_sender >= 0 && {owner _actor != _sender}}) then { continue };
-    private _age = _x select -1;
-    private _time = time - ((([_age, 0] select !(_age isEqualType 0)) max 0) min 5);
+    private _time = (_x select -1) call aar_fnc_reportTime;
     switch (_kind) do {
         case "wound": {
             _x params ["", "", ["_wounds", [], [[]]], ["_shooter", objNull, [objNull]], ["_cause", "", [""]]];

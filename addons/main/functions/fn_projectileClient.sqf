@@ -7,15 +7,16 @@
  * authoritative: there it hits, explodes and ends; the server's copy of a player's bullet never
  * reports a hit and often has no end. So this machine records the projectiles its own units fire
  * (its player, AI in that player's group, headless client AI) and sends them to the server
- * (aar_fnc_projectileReport) in batches a few times a second. Each entry carries how long ago it
- * happened, so the server can stamp it with the right time.
+ * (aar_fnc_projectileReport) in batches a few times a second. Each entry carries
+ * CBA_missionTime when it happened, so the server records it at that time.
  *
  * Entries, with a per-machine projectile id:
- *   ["shot", id, shooter, instigator, weapon, ammo, position, velocity, age]
- *   ["sub", id, parent id, ammo, position, velocity, age]   a submunition of a shot
- *   ["hit", id, hit object, position, component, age]
- *   ["splash", id, hit object, age]
- *   ["end", id, position, exploded, age]
+ *   ["shot", id, shooter, instigator, weapon, ammo, position, velocity, time]
+ *   ["sub", id, parent id, ammo, position, velocity, time]   a submunition of a shot
+ *   ["hit", id, hit object, position, component, time]
+ *   ["splash", id, hit object, time]
+ *   ["end", id, position, exploded, time]
+ * where time is CBA_missionTime when it happened.
  */
 if (isServer || {!isNil "aar_pc_ready"}) exitWith {};
 aar_pc_ready = true;
@@ -32,18 +33,18 @@ aar_pc_attach = {
         private _sid = aar_pc_nextId;
         aar_pc_nextId = aar_pc_nextId + 1;
         aar_pc_buffer pushBack ["sub", _sid, _projectile getVariable ["aar_pc_id", 0], typeOf _submunition,
-            getPosASL _submunition, velocity _submunition, diag_tickTime];
+            getPosASL _submunition, velocity _submunition, CBA_missionTime];
         [_submunition, _sid] call aar_pc_attach;
     }];
     _projectile addEventHandler ["HitPart", {
         params ["_projectile", "_hitEntity", "", "_pos", "", "", "_components"];
         if (isNull _hitEntity) exitWith {};
-        aar_pc_buffer pushBack ["hit", _projectile getVariable ["aar_pc_id", 0], _hitEntity, _pos, _components param [0, ""], diag_tickTime];
+        aar_pc_buffer pushBack ["hit", _projectile getVariable ["aar_pc_id", 0], _hitEntity, _pos, _components param [0, ""], CBA_missionTime];
     }];
     _projectile addEventHandler ["HitExplosion", {
         params ["_projectile", "_hitEntity"];
         if (isNull _hitEntity) exitWith {};
-        aar_pc_buffer pushBack ["splash", _projectile getVariable ["aar_pc_id", 0], _hitEntity, diag_tickTime];
+        aar_pc_buffer pushBack ["splash", _projectile getVariable ["aar_pc_id", 0], _hitEntity, CBA_missionTime];
     }];
     _projectile addEventHandler ["Explode", {
         (_this select 0) setVariable ["aar_pc_exploded", true];
@@ -51,7 +52,7 @@ aar_pc_attach = {
     _projectile addEventHandler ["Deleted", {
         params ["_projectile"];
         aar_pc_buffer pushBack ["end", _projectile getVariable ["aar_pc_id", 0], getPosASL _projectile,
-            _projectile getVariable ["aar_pc_exploded", false], diag_tickTime];
+            _projectile getVariable ["aar_pc_exploded", false], CBA_missionTime];
     }];
 };
 
@@ -69,16 +70,14 @@ addMissionEventHandler ["ProjectileCreated", {
     private _id = aar_pc_nextId;
     aar_pc_nextId = aar_pc_nextId + 1;
     aar_pc_buffer pushBack ["shot", _id, _shooter, _instigator, _weapon, typeOf _projectile,
-        getPosASL _projectile, velocity _projectile, diag_tickTime];
+        getPosASL _projectile, velocity _projectile, CBA_missionTime];
     [_projectile, _id] call aar_pc_attach;
 }];
 
 addMissionEventHandler ["EachFrame", {
     if (aar_pc_buffer isEqualTo [] || {diag_tickTime < aar_pc_flushAt}) exitWith {};
     aar_pc_flushAt = diag_tickTime + 0.25;
-    private _now = diag_tickTime;
-    // The last element of every entry is when it happened; send how long ago instead.
-    private _batch = aar_pc_buffer apply { _x set [count _x - 1, _now - (_x select -1)]; _x };
+    private _batch = aar_pc_buffer;
     aar_pc_buffer = [];
     for "_i" from 0 to count _batch - 1 step 200 do {
         [_batch select [_i, 200]] remoteExecCall ["aar_fnc_projectileReport", 2];

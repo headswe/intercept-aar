@@ -27,6 +27,7 @@ class CfgFunctions {
             class init { postInit = 1; };
             class settings {};
             class rec {};
+            class reportTime {};
             class pos {};
             class id {};
             class knownId {};

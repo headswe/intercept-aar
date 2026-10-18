@@ -16,6 +16,6 @@ private _fields = ["unit", toJSON _id, "pos", (getPosASL _unit) call aar_fnc_pos
 if (_state) then {
     (aar_lastHits getOrDefault [_id, []]) params [["_shooter", 0], ["_instigator", 0], "", "", "", ["_t", -1e9]];
     private _by = [_instigator, _shooter] select (_instigator == 0);
-    if (_by != 0 && _by != _id && {time - _t <= 30}) then { _fields append ["by", toJSON _by] };
+    if (_by != 0 && _by != _id && {CBA_missionTime - _t <= 30}) then { _fields append ["by", toJSON _by] };
 };
 [["awake", "unconscious"] select _state, _fields] call aar_fnc_rec;
