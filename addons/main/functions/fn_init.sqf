@@ -6,7 +6,7 @@
  * override any of them in description.ext (all optional):
  *   class AAR { enabled = 1; interval = 1; keyframeInterval = 60; logProjectiles = 1; logHits = 1; logMarkers = 1;
  *               frameBudget = 2; spikeThreshold = 100; pauseWhenEmpty = 1; logAI = 1; enemyDetectedCooldown = 120; logRadio = 1;
- *               logChat = 1; };
+ *               logChat = 1; logACE = 1; };
  */
 if (!isServer) exitWith {};
 aar_active = false;
@@ -32,6 +32,7 @@ aar_pauseWhenEmpty = (["pauseWhenEmpty", 1] call _setting) != 0;
 aar_logAI = (["logAI", 1] call _setting) != 0;  // AI group behaviour, enemies detected, fleeing
 aar_enemyDetectedCooldown = (["enemyDetectedCooldown", 120] call _setting) max 0;  // s before a group's same target is logged again
 aar_logChat = (["logChat", 1] call _setting) != 0;  // chat on every channel
+aar_logACE = (["logACE", 1] call _setting) != 0 && {isClass (configFile >> "CfgPatches" >> "ace_main")};  // ACE wounds, treatment, dragging, captives, explosives
 aar_tmf = isClass (configFile >> "CfgPatches" >> "tmf_common");  // TMF ORBAT and loadouts
 aar_logRadio = (["logRadio", 1] call _setting) != 0 && {isClass (configFile >> "CfgPatches" >> "acre_main") || isClass (configFile >> "CfgPatches" >> "tfar_core")};
 // TMF's ACRE2 radio networks, when the mission uses them.
@@ -128,6 +129,13 @@ if (aar_logRadio) then {
     // ACRE2 and TFAR raise transmissions only on the speaker's machine, so every machine with a
     // player gets the client half as code (no mod needed there), queued for players joining later.
     [[], aar_fnc_radioClient] remoteExecCall ["call", [0, -2] select isDedicated, "aar_radioClient"];
+};
+
+if (aar_logACE) then {
+    call aar_fnc_aceEvents;
+    // Wounds, treatment, dragging and fireteam colours are raised only on the machine the unit is
+    // local to, so every machine (the server too) runs the reporter, queued for players joining later.
+    [[], aar_fnc_aceClient] remoteExecCall ["call", 0, "aar_aceClient"];
 };
 
 addMissionEventHandler ["EachFrame", { call aar_fnc_frame }];

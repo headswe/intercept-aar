@@ -22,6 +22,7 @@ private _add = {
 ["enemyDetectedCooldown", "SLIDER", ["Enemy detected cooldown", "Seconds before a group re-detecting the same target is logged again. 0 = every time."], "Events", [0, 600, 120, 0]] call _add;
 ["logRadio", "CHECKBOX", ["Radio", "radio_tx / radios / radio_nets with ACRE2 or TFAR."], "Events", true] call _add;
 ["logChat", "CHECKBOX", ["Chat", "What players type on every channel, plus system and script messages the server sees."], "Events", true] call _add;
+["logACE", "CHECKBOX", ["ACE", "With ACE: wounds, medical treatment, dragging and carrying, fireteam colours, captives, explosives and trip flares."], "Events", true] call _add;
 
 ["frameBudget", "SLIDER", ["Frame budget (ms)", "Recorder work per frame; snapshots are spread over frames to stay near it."], "Performance", [0.1, 20, 2, 1]] call _add;
 ["spikeThreshold", "SLIDER", ["Spike threshold (ms)", "Server frames slower than this get a perf_spike record and an RPT line."], "Performance", [1, 1000, 100, 0]] call _add;

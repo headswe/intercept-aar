@@ -261,6 +261,15 @@ for t10 in range(10, DURATION * 10):
         ev(t + 2.5, "proj_splash", id=shot_id, target=tgt)
         ev(t + 2.5, "proj_end", id=shot_id, pos=[round(ub["x"], 1), round(ub["y"], 1), 20], exploded=True)
         shot_id += 1
+    if t == 20:   # ACE fireteam colour
+        ev(t, "team", unit=3, team="RED")
+    if t in (100.0, 104.0):   # ACE explosive set down, then armed
+        u = units[5]
+        ev(t, "explosive", action="placed" if t == 100 else "armed", **{"class": "DemoCharge_Remote_Mag" if t == 100 else "DemoCharge_Remote_Ammo"},
+           by=5, pos=[round(u["x"], 1), round(u["y"], 1), 20], **({} if t == 100 else {"explosive": 1}))
+    if t == 140:   # ACE captive
+        u = units[east[2]]
+        ev(t, "captive", unit=east[2], captive=True, reason="SetSurrendered", pos=[round(u["x"], 1), round(u["y"], 1), 20])
     if t == 60:   # smoke with submunition
         ev(t, "shot", id=shot_id, shooter=car, instigator=7, weapon="SmokeLauncher", ammo="SmokeLauncherAmmo", pos=[units[car]["x"], units[car]["y"], 22], vel=[0, 30, 10])
         ev(t + 0.4, "shot", id=shot_id + 1, shooter=car, parent=shot_id, weapon="SmokeLauncher", ammo="SmokeShellVehicle", pos=[units[car]["x"], units[car]["y"] + 10, 24], vel=[0, 25, 5])
@@ -281,6 +290,14 @@ for t10 in range(10, DURATION * 10):
                 # ACE medical: down first, bled out later; ACE credits the shooter.
                 ev(t - 25, "hit", unit=vid, source=killer, instigator=killer, damage=0.8)
                 ev(t - 25, "unconscious", unit=vid, pos=pos, by=killer)
+                ev(t - 25, "wound", unit=vid, wounds=[["Body", 0.62], ["LeftArm", 0.18]], cause="B_65x39_Caseless_green", by=killer, pos=pos)
+                medic = 2 if vid != 2 else 1
+                ev(t - 20, "drag", unit=medic, target=vid, how="drag", started=True, pos=pos)
+                ev(t - 14, "drag", unit=medic, target=vid, how="drag", started=False, pos=pos)
+                ev(t - 12, "treatment", medic=medic, patient=vid, result="started", part="body", action="FieldDressing", item="ACE_fieldDressing")
+                ev(t - 8, "treatment", medic=medic, patient=vid, result="done", part="body", action="FieldDressing", item="ACE_fieldDressing")
+                ev(t - 6, "treatment", medic=medic, patient=vid, result="started", part="body", action="CPR")
+                ev(t - 1, "treatment", medic=medic, patient=vid, result="failed", part="body", action="CPR")
                 ev(t, "killed", victim=vid, killer=killer, instigator=killer, pos=pos, credit="ace", cause="#bleedout",
                    weapon=weapon[0], weapon_name=weapon[1], distance=dist)
             else:
