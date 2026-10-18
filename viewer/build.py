@@ -1,19 +1,28 @@
 #!/usr/bin/env python3
 """Builds the standalone viewer page (aar-viewer.html) from viewer.body.html.
 
-Usage: build.py [recording.jsonl [label]] [--body-only out.html] [--terrains terrains.json]
+Usage: build.py [recording.jsonl [label]] [--body-only out.html] [--terrains terrains.json] [--config viewer-config.json]
 With a recording, it is embedded as the example that loads on open.
 With --terrains (from fetch_terrains.py), MissionDB's tile configs are embedded too.
+With --config, a viewer config (see the README) is embedded, for a page opened from disk.
 """
 import html
+import json
 import sys
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 
 
-def build(sample: Path | None, label: str, body_only: bool, terrains: Path | None = None) -> str:
+def build(sample: Path | None, label: str, body_only: bool, terrains: Path | None = None, config: Path | None = None) -> str:
     body = (HERE / "viewer.body.html").read_text(encoding="utf-8")
+    if config:
+        data = config.read_text(encoding="utf-8")
+        if not isinstance(json.loads(data), dict):
+            sys.exit("config is not a JSON object")
+        if "</script" in data.lower():
+            sys.exit("config contains </script, refusing to embed")
+        body = body.replace("<!--CONFIG-->", f'<script type="application/json" id="viewer-config">{data}</script>')
     if terrains:
         data = terrains.read_text(encoding="utf-8")
         if "</script" in data.lower():
@@ -43,7 +52,10 @@ if __name__ == "__main__":
     terrains = None
     if "--terrains" in args:
         i = args.index("--terrains"); terrains = Path(args[i + 1]); del args[i:i + 2]
+    config = None
+    if "--config" in args:
+        i = args.index("--config"); config = Path(args[i + 1]); del args[i:i + 2]
     sample = Path(args[0]) if args else None
     label = args[1] if len(args) > 1 else "Example recording"
-    page = build(sample, label, body_only, terrains)
+    page = build(sample, label, body_only, terrains, config)
     (out or HERE / "aar-viewer.html").write_text(page, encoding="utf-8")

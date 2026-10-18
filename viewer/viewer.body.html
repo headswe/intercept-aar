@@ -253,6 +253,7 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
 
 <!--SAMPLE-->
 <!--TERRAINS-->
+<!--CONFIG-->
 
 <script>
 (() => {
@@ -545,6 +546,63 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
     iconmanleader: "L", iconmanofficer: "O", iconmanrecon: "R", iconmanvirtual: "V" };
   const iconLetter = e => ICON_LETTERS[String(e.icon || "").toLowerCase()] || "";
 
+  // ---------- sources ----------
+  // Where the viewer gets its map tiles, names, icons and recordings, so it can be pointed at another
+  // tile service or another set of game data. Later sources win: these defaults, a viewer-config
+  // script block in the page (build.py --config), viewer-config.json next to the page (or the file
+  // ?config=<url> names), then URL parameters with the same names. Relative URLs are relative to the page.
+  // Templates: {tiles} the tile base, {world} the world name, {slug} the terrain's tile folder,
+  // {z} {x} {y} the tile, {v} the terrain's tile version; {path} a texture path (see iconUrl).
+  const lc = x => String(x || "").toLowerCase();
+  const MISSIONDB = "https://mission-db.1tac.eu/tiles/";
+  const conf = {
+    tiles: MISSIONDB,                             // tile base, used by the templates below
+    tileUrl: "{tiles}{slug}/tiles/{z}/{x}/{y}.png", // ?v=<version> is added unless it has {v}
+    terrainConfig: "{tiles}{slug}/config.json",   // size and zoom range of a terrain; "" = use world_size
+    terrainAliases: "{tiles}config.json",         // world -> slug map; "" = none
+    aliases: {},                                  // world -> slug, wins over the built-in table and the map
+    terrains: {},                                 // slug -> terrain config, used before fetching one
+    cfg: ["aar-cfg.json", "aar/aar-cfg.json"],    // names; the first that loads is used
+    icons: ["aar-icons.json", "aar/aar-icons.json"], // texture list; the first that loads is used
+    iconUrl: "",                                  // texture not in the list: base URL or template with {path}
+    recordings: "aar/",                           // folder with index.json or a directory listing
+  };
+  const confKeys = Object.keys(conf), confDefaults = { ...conf };
+  const listy = k => k === "cfg" || k === "icons";
+  function applyConf(o, from) {
+    if (!o || typeof o !== "object" || Array.isArray(o)) throw new Error(from + " is not a JSON object");
+    for (const k of confKeys) {
+      if (!(k in o)) continue;
+      const v = o[k];
+      if (k === "aliases" || k === "terrains") conf[k] = { ...conf[k], ...Object.fromEntries(Object.entries(v || {}).map(([a, b]) => [lc(a), b])) };
+      else if (listy(k)) conf[k] = (Array.isArray(v) ? v : v ? [v] : []).map(String);
+      else conf[k] = v == null ? "" : String(v);
+    }
+  }
+  const fill = (tpl, vals) => String(tpl).replace(/\{(\w+)\}/g, (m, k) => k in vals ? vals[k] : m);
+  const pageUrl = u => { try { return new URL(u, location.href).href; } catch { return ""; } };
+  const fetchable = u => !!u && !u.startsWith("file:");
+  const confParams = new URLSearchParams(location.search);
+  const confReady = (async () => {
+    const problems = [];
+    try { const el = document.getElementById("viewer-config"); if (el) applyConf(JSON.parse(el.textContent), "the embedded viewer config"); }
+    catch (err) { problems.push(err.message); }
+    const named = confParams.get("config"), file = pageUrl(named || "viewer-config.json");
+    if (fetchable(file)) try {
+      const r = await fetch(file, { cache: "no-cache" });
+      if (r.ok) applyConf(JSON.parse(await r.text()), file);
+      else if (named) problems.push(file + ": HTTP " + r.status);
+    } catch (err) { if (named || err instanceof SyntaxError || /JSON object/.test(err.message)) problems.push(file + ": " + err.message); }
+    // ?tiles=, ?tileUrl=, ?cfg=, ... ; aliases and terrains take JSON.
+    for (const k of confKeys) if (confParams.has(k)) try {
+      const v = confParams.get(k);
+      applyConf({ [k]: k === "aliases" || k === "terrains" ? JSON.parse(v) : v }, "?" + k);
+    } catch (err) { problems.push("?" + k + ": " + err.message); }
+    if (conf.tiles && !conf.tiles.endsWith("/")) conf.tiles += "/";
+    if (problems.length) { $("error").textContent = "Viewer config: " + problems.join("; "); $("error").hidden = false; }
+    return conf;
+  })();
+
   // ---------- game data ----------
   // Names and textures come from the game rather than the recording: aar_fnc_gameData on the server
   // (or tools/export_cfg.sqf) exports the names (aar-cfg.json), and the extension (or
@@ -552,7 +610,6 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
   // holds them as data URIs). They are opened like a recording, or found next to the page or in aar/
   // when served over http, and kept in IndexedDB for next time.
   const game = { vehicles: {}, weapons: {}, factions: {}, vehicle_icons: {}, icons: {}, images: new Map(), tinted: new Map() };
-  const lc = x => String(x || "").toLowerCase();
   const texKey = p => { p = lc(p).replace(/\//g, "\\").replace(/^\\+/, ""); return p && !/\.[^\\]*$/.test(p) ? p + ".paa" : p; };
   function applyGame(pack) {
     const low = o => Object.fromEntries(Object.entries(o || {}).map(([k, v]) => [lc(k), v]));
@@ -595,11 +652,28 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
   // The map icon texture: the recording's own, else the one the config export gives for its class.
   const iconPath = e => e.icon_path || game.vehicle_icons[lc(e.icon || vehicleRow(e)[2])] || "";
   function texture(path) {
-    const k = texKey(path), uri = game.icons[k];
+    const k = texKey(path), uri = game.icons[k] || iconFromConf(k);
     if (!uri) return null;
     let img = game.images.get(k);
-    if (!img) { img = new Image(); img.onload = () => { cardKey = ""; }; img.src = uri; game.images.set(k, img); }
+    if (!img) {
+      // From another site, asked for with CORS first so a vehicle card can still copy its picture;
+      // a host without CORS gets a plain request, which still draws on the map.
+      img = new Image(); img.onload = () => { cardKey = ""; };
+      if (/^https?:/.test(uri) && new URL(uri).origin !== location.origin) {
+        img.crossOrigin = "anonymous";
+        img.onerror = () => { img.onerror = null; img.removeAttribute("crossorigin"); img.src = uri; };
+      }
+      img.src = uri; game.images.set(k, img);
+    }
     return img.complete && img.naturalWidth ? img : null;
+  }
+  // A texture the icon list lacks, from conf.iconUrl: a base URL gets icons/'s layout (<path>.png),
+  // a template gets {path} (the texture path with / and no .paa) and {key} (as the game names it).
+  function iconFromConf(k) {
+    if (!conf.iconUrl || !k) return "";
+    const path = k.replace(/\.paa$/, "").replace(/\\/g, "/").split("/").map(encodeURIComponent).join("/");
+    const tpl = /\{(path|key)\}/.test(conf.iconUrl) ? conf.iconUrl : conf.iconUrl.replace(/\/?$/, "/") + "{path}.png";
+    return pageUrl(fill(tpl, { path, key: encodeURIComponent(k) }));
   }
   // Arma's map icons are white on transparent; drawn in the side colour like the game does.
   function tinted(path, col) {
@@ -773,15 +847,14 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
   // published viewer carries copies of both (#terrains, fetched by the Pages build). For a world not in that copy
   // it tries the live configs, which only work same-origin or once CORS is added, and then falls back to the
   // header's world size. The built-in alias table below wins over MissionDB's alias map.
-  // Missing tiles (sea, or slow deep zooms) fall back to the nearest parent tile. ?tiles=<base> overrides the host.
+  // Missing tiles (sea, or slow deep zooms) fall back to the nearest parent tile. The URLs come from conf
+  // (?tiles=<base> and the other tile keys); the embedded copies are only used while they are MissionDB's.
   const WORLD_SIZES = { altis: 30720, stratis: 8192, tanoa: 15360, malden: 12800, enoch: 12800, vr: 8192 };
   const TILE_ALIASES = { baranowwinter: "baranow", chernarus_summer: "chernarus", chernarus_winter: "chernarus", gm_weferlingen_winter: "gm_weferlingen_summer",
     panovowinter: "panovo", staszowwinter: "staszow", tem_chamw: "tem_cham" };
-  const tiles = { base: new URLSearchParams(location.search).get("tiles") || "https://mission-db.1tac.eu/tiles/",
-    world: "", slug: "", width: 0, height: 0, ppm: 1, native: 0, minZoom: 0, maxZoom: 0, version: "", bg: "" };
-  if (!tiles.base.endsWith("/")) tiles.base += "/";
-  let baked = null;
-  try { if (!new URLSearchParams(location.search).get("tiles")) baked = JSON.parse(document.getElementById("terrains")?.textContent || "null"); } catch {}
+  const tiles = { world: "", slug: "", width: 0, height: 0, ppm: 1, native: 0, minZoom: 0, maxZoom: 0, version: "", bg: "" };
+  let embedded = null;
+  try { embedded = JSON.parse(document.getElementById("terrains")?.textContent || "null"); } catch {}
   // Highest zoom that actually loads, learnt as tiles load: a zoom where tiles keep failing while none
   // load caps the zoom one below it.
   let zoomStats = [], zoomCap = 99;
@@ -794,7 +867,7 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
     // RasterCoords picks the native zoom as the smallest one whose tiles cover the whole image.
     const native = cfg && Number.isFinite(+cfg.maxZoom) ? +cfg.maxZoom : width ? Math.max(0, Math.ceil(Math.log2(Math.max(width, height) * ppm / 256))) : 0;
     Object.assign(tiles, { world, width, height, ppm, native,
-      slug: (cfg && cfg.name) || TILE_ALIASES[world] || world,
+      slug: (cfg && cfg.name) || conf.aliases[world] || TILE_ALIASES[world] || world,
       minZoom: cfg && Number.isFinite(+cfg.minZoom) ? +cfg.minZoom : 0,
       maxZoom: cfg ? Math.max(native, +cfg.dynamicMaxZoom || 0) : native,
       version: cfg && cfg.version ? String(cfg.version) : "", bg: cfg && cfg.bgColor || "" });
@@ -805,22 +878,25 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
     const token = ++tileLoad;
     setTerrain("", 0, null);
     if (!world) return;
+    await confReady;
+    if (token !== tileLoad) return;
     const get = async u => { const res = await fetch(u); if (!res.ok) throw new Error(res.status); return res.json(); };
-    let slug = TILE_ALIASES[world] || world;
-    if (baked) {
-      slug = TILE_ALIASES[world] || (baked.aliases || {})[world] || world;
-      const cfg = (baked.terrains || {})[slug];
-      if (cfg) { setTerrain(world, size, { ...cfg, name: slug }); return; }
-    } else {
-      try { const map = await get(tiles.base + "config.json"); slug = TILE_ALIASES[world] || map[world] || world; } catch {}
-    }
-    let cfg = null;
-    try { cfg = { ...await get(tiles.base + encodeURIComponent(slug) + "/config.json"), name: slug }; } catch {}
-    if (token === tileLoad) setTerrain(world, size, cfg);
+    const url = (tpl, slug) => pageUrl(fill(tpl, { tiles: conf.tiles, world: encodeURIComponent(world), slug: encodeURIComponent(slug) }));
+    // The page's copies of MissionDB's configs fit only while the configs come from MissionDB.
+    const baked = embedded && conf.tiles === MISSIONDB && conf.terrainConfig === confDefaults.terrainConfig &&
+      conf.terrainAliases === confDefaults.terrainAliases ? embedded : null;
+    const own = conf.aliases[world] || TILE_ALIASES[world];
+    let slug = own || world;
+    if (baked) slug = own || (baked.aliases || {})[world] || world;
+    else if (conf.terrainAliases && !own) try { slug = (await get(url(conf.terrainAliases, world)))[world] || world; } catch {}
+    let cfg = conf.terrains[lc(slug)] || (baked && (baked.terrains || {})[slug]);
+    if (!cfg && conf.terrainConfig) try { cfg = await get(url(conf.terrainConfig, slug)); } catch {}
+    if (token === tileLoad) setTerrain(world, size, cfg ? { ...cfg, name: slug } : null);
   }
   function tileAt(z, x, y) {
-    let url = tiles.base + encodeURIComponent(tiles.slug) + "/tiles/" + z + "/" + x + "/" + y + ".png";
-    if (tiles.version) url += "?v=" + encodeURIComponent(tiles.version);
+    const v = encodeURIComponent(tiles.version);
+    let url = pageUrl(fill(conf.tileUrl, { tiles: conf.tiles, world: encodeURIComponent(tiles.world), slug: encodeURIComponent(tiles.slug), z, x, y, v }));
+    if (v && !conf.tileUrl.includes("{v}")) url += (url.includes("?") ? "&" : "?") + "v=" + v;
     let c = tileCache.get(url);
     if (!c) {
       if (tileCache.size > 3000) tileCache.clear();
@@ -2137,7 +2213,7 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
       .then(x => load(x, "Sample recording (made up)"), err => { $("error").textContent = "Could not load the sample: " + err.message; $("error").hidden = false; });
   };
   // ---------- recordings in ./aar/ ----------
-  // Served over http(s), the page looks for an aar/ folder next to it: aar/index.json if there is one
+  // Served over http(s), the page looks for an aar/ folder next to it (conf.recordings): aar/index.json if there is one
   // (a list of names, or of {name, size, modified}), else the web server's directory listing.
   // A page opened from disk can't list folders, so there is nothing to find there.
   let recordings = [], current = "";
@@ -2147,7 +2223,10 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
   }
   function fmtSize(n) { return n == null || isNaN(n) ? "" : n < 1024 ? n + " B" : n < 1048576 ? (n / 1024).toFixed(0) + " KB" : (n / 1048576).toFixed(1) + " MB"; }
   async function findRecordings() {
-    const base = new URL("aar/", location.href);
+    await confReady;
+    if (!conf.recordings) return [];
+    const base = new URL(conf.recordings.replace(/\/?$/, "/"), location.href);
+    if (!fetchable(base.href)) return [];
     const get = async (u, type) => { const r = await fetch(u, { cache: "no-cache" }); if (!r.ok) throw new Error("HTTP " + r.status); return type === "json" ? r.json() : r.text(); };
     let list = [];
     try {
@@ -2193,14 +2272,15 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
   };
   addEventListener("click", e => { if (!$("reclist").hidden && !e.target.closest("#reclist, #recbtn")) showRecList(false); });
   addEventListener("keydown", e => { if (e.key === "Escape" && !$("reclist").hidden) { showRecList(false); $("recbtn").focus(); } });
-  // Game data: what was opened before, then any newer files next to the page or in aar/.
-  idb("readonly", st => st.getAll()).then(packs => { for (const p of packs || []) applyGame(p); }).catch(() => {}).then(async () => {
-    if (location.protocol === "file:") return;
-    for (const name of ["aar-cfg.json", "aar-icons.json"]) for (const dir of ["", "aar/"]) {
-      try { const u = new URL(dir + name, location.href), r = await fetch(u, { cache: "no-cache" }); if (r.ok && gameFile(await r.text(), u.href)) break; } catch (_) {}
+  // Game data: what was opened before, then any newer files from conf.cfg and conf.icons (by default
+  // next to the page or in aar/).
+  idb("readonly", st => st.getAll()).then(packs => { for (const p of packs || []) applyGame(p); }).catch(() => {}).then(() => confReady).then(async () => {
+    for (const list of [conf.cfg, conf.icons]) for (const name of list) {
+      const u = pageUrl(name); if (!fetchable(u)) continue;
+      try { const r = await fetch(u, { cache: "no-cache" }); if (r.ok && gameFile(await r.text(), u)) break; } catch (_) {}
     }
   });
-  if (location.protocol !== "file:") findRecordings().then(list => {
+  findRecordings().then(list => {
     if (!list.length) return;
     recordings = list;
     $("recbtn").textContent = "Recordings (" + list.length + ")"; $("recbtn").hidden = false;
