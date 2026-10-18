@@ -267,7 +267,7 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
   const $ = id => document.getElementById(id);
   const SPEEDS = [1, 2, 4, 8, 16];
   const FILTERS = [
-    ["kills", "Kills", true], ["hits", "Hits", true], ["vehicles", "Vehicles", true],
+    ["kills", "Kills", true], ["hits", "Hits", true], ["medical", "Medical", true], ["vehicles", "Vehicles", true],
     ["players", "Players", true], ["radio", "Radio", true], ["chat", "Chat", true], ["markers", "Markers", true], ["ai", "AI", true], ["world", "World", true],
     ["shots", "Shots", false],
   ];
@@ -295,7 +295,7 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
 
   const KNOWN = new Set(["end", "group", "player", "shot", "proj_hit", "proj_splash", "killed", "hit", "loadout", "perf_spike", "idle", "building",
     "marker_created", "marker_updated", "marker_deleted", "get_in", "get_out", "seat", "respawn", "connected", "disconnected", "combat_mode", "enemy_detected", "fleeing",
-    "radio_tx", "radios", "cover_map", "unconscious", "awake", "chat"]);
+    "radio_tx", "radios", "cover_map", "unconscious", "awake", "chat", "wound", "treatment", "drag", "team", "captive", "explosive", "tripflare"]);
 
   // AI group state from combat_mode / enemy_detected / fleeing, keyed by side and group name.
   const groupKey = (side, name) => side + "|" + name;
@@ -1320,6 +1320,15 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
       tooltip(ctx, hx, hy, [[e.callsign || e.display], ...crew.slice(0, 10).map(u => [nameAt(u, t), isPlayerAt(u, t) ? C.ink : C["ink-soft"]])]);
     }
   }
+  // ACE: treatment classes as players know them, and what happened to an explosive.
+  const TREATMENTS = { fielddressing: "field dressing", packingbandage: "packing bandage", elasticbandage: "elastic bandage", quikclot: "QuikClot",
+    basicbandage: "bandage", applytourniquet: "tourniquet", removetourniquet: "tourniquet removed", splint: "splint", morphine: "morphine", epinephrine: "epinephrine",
+    adenosine: "adenosine", painkillers: "painkillers", bloodiv: "blood IV", bloodiv_500: "blood IV", bloodiv_250: "blood IV", plasmaiv: "plasma IV",
+    plasmaiv_500: "plasma IV", plasmaiv_250: "plasma IV", salineiv: "saline IV", salineiv_500: "saline IV", salineiv_250: "saline IV", cpr: "CPR",
+    checkpulse: "pulse check", checkbloodpressure: "blood pressure check", checkresponse: "response check", personalaidkit: "PAK", surgicalkit: "stitching",
+    bodybag: "body bag", bodybagblue: "body bag", bodybagwhite: "body bag", grave: "grave", diagnose: "diagnosis" };
+  const treatmentName = a => TREATMENTS[String(a || "").toLowerCase()] || String(a || "treatment");
+  const EXPLOSIVE_ACTIONS = { placed: "explosive placed", armed: "explosive armed", defusing: "defusing", defused: "defused", defuse_exploded: "blew up defusing" };
   // Recent events float as short labels at the unit or group they concern, fading out over a few seconds.
   const EVENT_SECONDS = 4;
   const GROUP_EVENTS = new Set(["combat_mode", "enemy_detected", "fleeing", "killed"]);
@@ -1338,6 +1347,12 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
       case "killed": return [o.victim, "killed", true];
       case "unconscious": return [o.unit, "down", true];
       case "awake": return [o.unit, "awake"];
+      case "wound": return [o.unit, "wounded", true];
+      case "treatment": return o.result === "done" ? [o.patient, treatmentName(o.action)] : null;
+      case "drag": return o.started ? [o.unit, o.how === "carry" ? "carrying" : "dragging"] : null;
+      case "team": return [o.unit, "team " + String(o.team || "").toLowerCase()];
+      case "captive": return [o.unit, !o.captive ? "released" : o.reason === "SetSurrendered" ? "surrendered" : "handcuffed", !!o.captive];
+      case "explosive": return [o.by, EXPLOSIVE_ACTIONS[o.action] || o.action, o.action === "defuse_exploded"];
     }
     return null;
   }
@@ -1477,6 +1492,27 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
       }
       case "unconscious": return ["kills", '<span class="k">Unconscious</span> ' + who(o.unit, o.t) + (o.by ? " after a hit from " + who(o.by, o.t) : "") + (o.pos ? ' <span class="tag">' + grid(o.pos[0], o.pos[1]) + "</span>" : "")];
       case "awake": return ["kills", who(o.unit, o.t) + " woke up"];
+      case "wound": {
+        const parts = Array.isArray(o.wounds) ? o.wounds.map(w => esc(String(w[0]).replace(/([a-z])([A-Z])/g, "$1 $2").toLowerCase()) + " " + Math.round(w[1] * 100) / 100).join(", ") : "";
+        const cause = o.cause ? (/^[a-z]+$/.test(o.cause) ? o.cause : weaponName(o.cause)) : "";
+        return ["medical", who(o.unit, o.t) + " wounded" + (o.by && o.by !== o.unit ? " by " + who(o.by, o.t) : "") + (parts ? ' <span class="tag">' + parts + "</span>" : "") + (cause ? ' <span class="tag">' + esc(cause) + "</span>" : "")];
+      }
+      case "treatment": {
+        const self = o.patient === o.medic;
+        const verb = o.result === "started" ? " started " : o.result === "failed" ? " stopped " : " gave ";
+        return ["medical", who(o.medic, o.t) + verb + '<span class="tag">' + esc(treatmentName(o.action)) + "</span>" + (self ? " on themself" : (o.result === "done" ? " to " : " on ") + who(o.patient, o.t)) +
+          (o.part ? ' <span class="tag">' + esc(String(o.part).replace(/^(left|right)/, "$1 ")) + "</span>" : "") + (o.result === "failed" ? ' <span class="tag">interrupted</span>' : "")];
+      }
+      case "drag": return ["medical", who(o.unit, o.t) + (o.started ? " started " : " stopped ") + (o.how === "carry" ? "carrying " : "dragging ") + who(o.target, o.t)];
+      case "team": return ["players", who(o.unit, o.t) + ' joined team <span class="tag">' + esc(String(o.team || "").toLowerCase()) + "</span>"];
+      case "captive": return ["players", who(o.unit, o.t) + (!o.captive ? " was released" : o.reason === "SetSurrendered" ? " surrendered" : " was handcuffed") +
+        (o.by ? " by " + who(o.by, o.t) : "") + (o.pos ? ' <span class="tag">' + grid(o.pos[0], o.pos[1]) + "</span>" : "")];
+      case "explosive": {
+        const what = { placed: "placed", armed: "armed", defusing: "started defusing", defused: "defused", defuse_exploded: "set off while defusing" }[o.action] || esc(o.action);
+        return ["world", (o.by ? who(o.by, o.t) + " " + what : "Explosive " + what) + (o.class ? ' <span class="tag">' + esc(weaponName(o.class)) + "</span>" : "") +
+          (o.explosive ? ' <span class="tag">#' + esc(o.explosive) + "</span>" : "") + (o.pos ? ' <span class="tag">' + grid(o.pos[0], o.pos[1]) + "</span>" : "")];
+      }
+      case "tripflare": return ["world", "Trip flare set off" + (o.pos ? ' <span class="tag">' + grid(o.pos[0], o.pos[1]) + "</span>" : "")];
       case "proj_hit": { const s = rec.shots.get(o.id); return ["hits", who(o.target, o.t) + " hit" + (o.part ? ' in <span class="tag">' + esc(o.part) + "</span>" : "") + (s && s.shooter ? " by " + who(s.gunner || s.shooter, o.t) : "")]; }
       case "proj_splash": { const s = rec.shots.get(o.id); return ["hits", who(o.target, o.t) + " caught in blast" + (s && (s.weapon || s.ammo) ? ' <span class="tag">' + esc(s.weapon ? weaponName(s.weapon) : s.ammo) + "</span>" : "")]; }
       case "hit": return ["hits", who(o.unit, o.t) + ' took <span class="tag">' + Math.round(o.damage * 100) + "%</span> damage" + (o.instigator || o.source ? " from " + who(o.instigator || o.source, o.t) : "")];
@@ -1789,7 +1825,7 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
     "author", "overview", "game_type", "max_players", "server_name", "world_name", "world_size", "date", "time_multiplier", "weather", "game_version", "mods"]);
   function playerStats() {
     const stats = new Map();
-    const of = (id, time) => { const e = id && rec.entities.get(id); const u = e && uidAt(e, time); if (!u) return null; if (!stats.has(u)) stats.set(u, { name: nameAt(e, time), side: sideAt(e, time), k: 0, d: 0, shots: 0, dealt: 0, taken: 0 }); return stats.get(u); };
+    const of = (id, time) => { const e = id && rec.entities.get(id); const u = e && uidAt(e, time); if (!u) return null; if (!stats.has(u)) stats.set(u, { name: nameAt(e, time), side: sideAt(e, time), k: 0, d: 0, shots: 0, dealt: 0, taken: 0, treated: 0 }); return stats.get(u); };
     for (const e of rec.entities.values()) for (const p of e.players) if (p[1]) of(e.id, p[0]);
     for (const k of rec.kills) { const a = of(k.instigator || k.killer, k.t); if (a && (k.instigator || k.killer) !== k.victim) a.k++; const v = of(k.victim, k.t); if (v) v.d++; }
     for (const x of rec.shotList) { if (x.parent) continue; const a = of(x.gunner || x.shooter, x.t0); if (a) a.shots++; }
@@ -1805,6 +1841,8 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
       const v = of(id, time); if (v) v.taken++;
       if (by && by !== id) { const a = of(by, time); if (a) a.dealt++; }
     }
+    // ACE treatments a player finished on someone else.
+    for (const o of rec.events) if (o.type === "treatment" && o.result === "done" && o.patient !== o.medic) { const a = of(o.medic, o.t); if (a) a.treated++; }
     return [...stats.values()].sort((a, b) => a.side.localeCompare(b.side) || b.k - a.k || a.name.localeCompare(b.name));
   }
   function renderMission() {
@@ -1841,9 +1879,9 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
     html += '<div class="sec"><h3>Sides</h3><table class="tbl"><tr><th>Side</th><th class="n">Units</th><th class="n">Vehicles</th><th class="n">Killed</th><th class="n">Players</th></tr>' +
       [...sides].sort().map(([sd, x]) => '<tr><td class="s-' + esc(sd) + '">' + esc(sideName(sd)) + '</td><td class="n">' + x.units + '</td><td class="n">' + x.vehicles + '</td><td class="n">' + x.lost + '</td><td class="n">' + x.players.size + "</td></tr>").join("") + "</table></div>";
 
-    const ps = playerStats();
-    html += '<div class="sec"><h3>Players</h3>' + (ps.length ? '<table class="tbl"><tr><th>Name</th><th class="n" title="Kills">K</th><th class="n" title="Deaths">D</th><th class="n" title="Rounds, grenades and rockets fired">Shots</th><th class="n" title="Times this player hit another unit or vehicle">Hits</th><th class="n" title="Times this player was hit">Hit by</th></tr>' +
-      ps.map(p => '<tr><td class="s-' + esc(p.side) + '">' + esc(p.name) + '</td><td class="n">' + p.k + '</td><td class="n">' + p.d + '</td><td class="n">' + p.shots + '</td><td class="n">' + p.dealt + '</td><td class="n">' + p.taken + "</td></tr>").join("") + "</table>"
+    const ps = playerStats(), treat = rec.events.some(o => o.type === "treatment");
+    html += '<div class="sec"><h3>Players</h3>' + (ps.length ? '<table class="tbl"><tr><th>Name</th><th class="n" title="Kills">K</th><th class="n" title="Deaths">D</th><th class="n" title="Rounds, grenades and rockets fired">Shots</th><th class="n" title="Times this player hit another unit or vehicle">Hits</th><th class="n" title="Times this player was hit">Hit by</th>' + (treat ? '<th class="n" title="ACE treatments given to others">Treated</th>' : "") + "</tr>" +
+      ps.map(p => '<tr><td class="s-' + esc(p.side) + '">' + esc(p.name) + '</td><td class="n">' + p.k + '</td><td class="n">' + p.d + '</td><td class="n">' + p.shots + '</td><td class="n">' + p.dealt + '</td><td class="n">' + p.taken + "</td>" + (treat ? '<td class="n">' + p.treated + "</td>" : "") + "</tr>").join("") + "</table>"
       : '<div class="empty" style="padding:0">No players in this recording.</div>') + "</div>";
     $("pane-mission").innerHTML = html;
   }

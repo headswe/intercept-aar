@@ -77,6 +77,13 @@ Every line is a JSON object with `type` and `t` (mission time in seconds, from `
 | `combat_mode` | an AI group's behaviour changed (`mode`: `SAFE`, `AWARE`, `COMBAT`, `STEALTH`, `CARELESS`), also written once when the group is first seen: `group`, `side`, `leader` |
 | `enemy_detected` | an AI group detected a new enemy: `group`, `side`, `leader`, `target`. The same group and target are logged at most once per `enemyDetectedCooldown` seconds (default 120). |
 | `fleeing` | an AI group started or stopped fleeing: `group`, `side`, `leader`, `fleeing` |
+| `wound` | ACE medical: a unit was wounded: `unit`, `wounds` (`[[body part, damage], ...]`, body parts as ACE names them: `Head`, `Body`, `LeftArm`, `RightArm`, `LeftLeg`, `RightLeg`), `cause` (the ammo class, or ACE's cause such as `burn`, `drowning`, `vehiclecrash`), `by` (who caused it, when known), `pos` |
+| `treatment` | ACE medical: a medic's treatment `result` (`started`, `done`, `failed` when interrupted): `medic`, `patient`, `part` (body part, lower case), `action` (ACE treatment class, e.g. `FieldDressing`, `Morphine`, `CPR`), `item` (the item used, when one was) |
+| `drag` | ACE: a unit started or stopped dragging or carrying another unit or object: `unit`, `target`, `how` (`drag`, `carry`), `started`, `pos` |
+| `team` | ACE: a unit was assigned a fireteam colour through ACE's interaction menu: `unit`, `team` (`MAIN`, `RED`, `GREEN`, `BLUE`, `YELLOW`) |
+| `captive` | ACE: a unit was handcuffed, surrendered, or released: `unit`, `captive`, `reason` (`SetHandcuffed`, `SetSurrendered`), `by` (who did it, when known), `pos` |
+| `explosive` | ACE explosives: `action` (`placed` when set down, `armed` when its trigger is set, `defusing`, `defused`, `defuse_exploded`), `class` (the magazine for `placed`, otherwise the explosive's class), `explosive` (a number per armed explosive, to follow it from `armed` to its defusal), `by`, `pos`. A defused or blown up explosive is often gone by the time the server hears of it; its record then has the unit's position and no `class` or `explosive` |
+| `tripflare` | ACE trip flare set off: `pos` |
 | `building` | a building or wall changed model, usually destroyed: `from`, `to` (classes), `ruin`, `pos` |
 | `end` | `reason`, `entities` |
 | `perf` | once per snapshot: server `fps`, `fps_min`, `units`, `entities`, `projectiles` in flight, and the recorder's own snapshot cost: `snap_frames` (frames it was spread over), `snap_ms` (total), `snap_max_ms` (worst frame), `batch` (entities per frame) |
@@ -107,11 +114,11 @@ Served from a web server, the viewer also looks for an `aar/` folder next to the
 - **Link to a recording:** `?src=<url>` opens a recording from a web address, if that server allows cross-origin requests.
 - **Map background:** MissionDB's R3-format tiles from `https://mission-db.1tac.eu/tiles/<slug>/tiles/{z}/{x}/{y}.png`, where the slug is the world name in lower case. The viewer first reads `tiles/config.json` (worlds that borrow another terrain's tiles) and `tiles/<slug>/config.json` (size, zoom range, background colour and `version`, which it adds to tile URLs as `?v=` so a re-tiled terrain is not served from cache). The layout follows Leaflet RasterCoords: one pixel per metre at the config's `maxZoom`, row 0 at the north edge, and zooms past it up to `dynamicMaxZoom` rendered on request. The tile host sends no CORS headers, so the page cannot read those files from another site. Instead the Pages build fetches them (`viewer/fetch_terrains.py`, for the worlds in `viewer/terrains.txt`, taken from MissionDB's terrain list, plus every alias) and embeds them in the published page, and a daily run refreshes them. MissionDB sometimes answers 502, so the build retries, keeps any config it still cannot fetch from the published page, and fails rather than replace a page that has configs with one that has none. For a world that is not embedded, or in the downloadable `aar-viewer.html`, the viewer tries the live configs and otherwise uses `world_size` from the header (or a built-in size), computes the same native zoom, and uses a built-in copy of the alias list, which loses only the version and background colour. Add a world to `terrains.txt` to embed its config. Missing tiles fall back to a lower zoom. `?tiles=<base url>` points the viewer at another tile host.
 - **Timeline:** shots per second as bars, kills as red ticks, server AI behaviour changes as small dark ticks, frame spikes as amber ticks and idle periods shaded. Click or drag to seek. Space plays and pauses, the arrow keys skip 5 s (30 s with Shift), and `[` / `]` change speed.
-- **Events:** every event up to the current time, filterable by kind (kills, hits, vehicles, players, markers, AI, world, shots). Click one to jump to it.
+- **Events:** every event up to the current time, filterable by kind (kills, hits, medical, vehicles, players, markers, AI, world, shots); medical covers ACE wounds, treatment and dragging or carrying. Click one to jump to it.
 - **Radio:** transmissions on the map as waves around the speaker with the channel name, a teal bar per transmission on the timeline, and a Radio tab with TMF's networks and channels (frequency, how many transmissions, time on air, units assigned), other channels heard, who talked most, and every transmission (click one to jump to it). A transmission takes its name from the TMF channel on the same frequency, else ACRE's channel label, else the channel number. A unit's card lists its radios, its TMF network and channels, and what it is transmitting on.
 - **Chat:** every message in the event feed with its channel, a pink tick per message on the timeline, what a unit typed shown next to it on the map for a few seconds, and a Chat tab listing all messages with a checkbox per channel (click one to jump to it).
 - **Units:** the TMF ORBAT tree when the recording has one, with each node's units and who is still alive; otherwise units by side and group.
-- **Mission:** everything in the header (mission, author, briefing, world, in-game date, weather, game version, mods), how the mission ended, and per-player stats.
+- **Mission:** everything in the header (mission, author, briefing, world, in-game date, weather, game version, mods), how the mission ended, and per-player stats (with ACE, the treatments each player gave others).
 - **Server:** server FPS, minimum FPS, units, entities and projectiles in flight over the mission from the `perf` records, the recorder's own cost, and a list of frame spikes.
 - **Data:** a count of every record type in the file and the raw records of any type, so a field the viewer does not draw is still readable.
 
@@ -166,6 +173,7 @@ class AAR {
     enemyDetectedCooldown = 120; // seconds before a group re-detecting the same target is logged again; 0 = every time
     logRadio = 1;           // radio_tx / radios / radio_nets with ACRE2 or TFAR
     logChat = 1;            // chat records: what players type on every channel, plus system and script messages the server sees
+    logACE = 1;             // with ACE: wound / treatment / drag / team / captive / explosive / tripflare records
 };
 ```
 
@@ -222,6 +230,12 @@ A player's damage is decided on the player's own machine. The server's copy of t
 ACE medical kills units by script, often well after the shot (bleeding out, cardiac arrest), so the engine's `EntityKilled` usually names nobody or the victim as killer. With ACE loaded the server waits up to 3 s after a unit dies for ACE's `ace_killed` event, which ACE raises on every machine with the last unit that damaged the victim, and writes `killed` with that credit (`credit: "ace"`) and ACE's `cause`. Without it, the engine's killer is used (`credit: "engine"`). Either way, when that is nobody or the victim, the last recorded hit on the victim from someone else within five minutes (from `proj_hit`, `proj_splash` or `hit`) is credited instead (`credit: "last_hit"`). The weapon and distance come from the last hit by whoever is credited; a submunition (an artillery shell, a bomblet) counts from where its parent was fired.
 
 Unconsciousness comes from ACE's `ace_unconscious` event, raised on every machine, so players need no reporter. Each snapshot also checks `lifeState` and ACE's `ACE_isUnconscious`, which catches vanilla incapacitation and anything the event missed.
+
+## Other ACE events
+
+With ACE loaded (and `logACE` on) the recorder also logs wounds, medical treatment, dragging and carrying, fireteam colours, captives, explosives and trip flares. ACE raises captive, explosive and trip flare events on every machine, so the server records them itself. Wounds (`ace_medical_woundReceived`), treatment (`ace_treatmentStarted`, `ace_treatmentSucceded`, `ace_treatmentFailed`), dragging (`ace_dragging_startedDrag` and the like) and fireteam colours (`ace_interaction_joinedTeam`) are raised only on the machine that owns the unit, so every machine runs `fn_aceClient.sqf` (sent as code like the other client reporters), which batches them to `aar_fnc_aceReport` four times a second. A report about a unit the sending machine does not own is dropped. A mission with its own `CfgRemoteExec` in whitelist mode needs `class aar_fnc_aceReport { allowedTargets = 2; };` under `Functions`.
+
+Markers placed with ACE's marker tool are recorded like any other marker (`marker_created`), so `ace_markers_markerPlaced` is not used. Fireteam colours set without ACE's menu (the vanilla command menu, scripts) are not recorded.
 
 ## Lessons from other recorders
 
