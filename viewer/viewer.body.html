@@ -240,7 +240,11 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
         <ol class="feed" id="feed"></ol>
       </div>
       <div class="pane" id="pane-units" hidden>
-        <div class="seg" id="unitmode" hidden><button data-m="orbat" aria-pressed="true">ORBAT</button><button data-m="groups" aria-pressed="false">Groups</button></div>
+        <div class="seg" id="unitmode" aria-label="Unit view and filter">
+          <button id="orbat-mode" data-m="orbat" aria-pressed="true">ORBAT</button>
+          <button data-m="groups" aria-pressed="false">Groups</button>
+          <button id="show-all-units" aria-pressed="false">Show all</button>
+        </div>
         <div class="roster" id="roster"></div>
       </div>
       <div class="pane" id="pane-radio" hidden></div>
@@ -302,6 +306,8 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
     ["tiles", "Terrain"], ["grid", "Grid"],
   ];
   const layers = Object.fromEntries(LAYERS.map(([k]) => [k, !(prefs.layers && prefs.layers[k] === false)]));
+  let groupMarkerMode = prefs.groupMarkerMode === "player-sides" ? "player-sides" : "all";
+  let unitFilterMode = prefs.unitFilterMode === "all" ? "all" : "player-or-tmf";
 
   const KNOWN = new Set(["end", "group", "player", "shot", "proj_hit", "proj_splash", "killed", "hit", "loadout", "perf_spike", "idle", "building",
     "marker_created", "marker_updated", "marker_deleted", "get_in", "get_out", "seat", "respawn", "connected", "disconnected", "combat_mode", "enemy_detected", "fleeing",
@@ -331,8 +337,14 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
     const closeTx = (k, time) => { const x = openTx.get(k); if (x) { x.t1 = time; openTx.delete(k); } };
     const ent = id => {
       let e = r.entities.get(id);
-      if (!e) { e = { id, kind: "unit", name: "#" + id, side: "UNKNOWN", group: "", display: "", cls: "", player: false, states: [], groups: [], players: [], orbats: [], radios: [], downs: [], shots: 0, kills: 0, info: {} }; r.entities.set(id, e); }
+      if (!e) { e = { id, kind: "unit", name: "#" + id, side: "UNKNOWN", group: "", display: "", cls: "", player: false, states: [], groups: [], players: [], loadouts: [], orbats: [], radios: [], downs: [], shots: 0, kills: 0, info: {} }; r.entities.set(id, e); }
       return e;
+    };
+    const recordLoadout = (e, o) => {
+      const prev = e.loadouts.at(-1);
+      const value = (key, index) => o[key] !== undefined ? o[key] : prev ? prev[index] : "";
+      e.loadouts.push([o.t, value("loadout_faction", 1), value("loadout_faction_name", 2), value("role", 3), value("role_name", 4)]);
+      for (const k of ["role", "role_name", "loadout_faction", "loadout_faction_name"]) if (o[k] !== undefined) e[k] = o[k];
     };
     let bad = 0;
     for (const line of text.split(/\r?\n/)) {
@@ -353,8 +365,9 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
           const e = ent(o.id);
           Object.assign(e, { kind: o.kind, cls: o.class, display: o.display || o.class, side: o.side, name: o.name || o.display || o.class, group: o.group || "", player: !!o.player, uid: o.uid || "" });
           e.info = o;
-          for (const k of ["role", "role_name", "loadout_faction", "callsign", "orbat_team", "radio_net", "radio_channels",
-            "var_name", "role_desc", "faction", "faction_name", "icon"]) if (o[k] !== undefined) e[k] = o[k];
+          for (const k of ["role", "role_name", "loadout_faction", "loadout_faction_name", "callsign", "orbat_team", "radio_net", "radio_channels",
+            "var_name", "role_desc", "faction", "faction_name", "icon", "icon_path"]) if (o[k] !== undefined) e[k] = o[k];
+          if (["role", "role_name", "loadout_faction", "loadout_faction_name"].some(k => o[k] !== undefined)) recordLoadout(e, o);
           if (o.group) groupMarker(r, o);
           e.groups.push([o.t, o.group || "", o.side]);
           if (o.orbat !== undefined) e.orbats.push([o.t, o.orbat]);
@@ -392,7 +405,7 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
         }
         case "chat": r.chat.push(o); r.events.push(o); break;
         case "radio_nets": r.nets = Array.isArray(o.nets) ? o.nets : null; break;
-        case "loadout": { const e = ent(o.unit); for (const k of ["role", "role_name", "loadout_faction"]) if (o[k] !== undefined) e[k] = o[k]; r.events.push(o); break; }
+        case "loadout": { recordLoadout(ent(o.unit), o); r.events.push(o); break; }
         case "orbat": r.orbat = o; break;
         case "leader": groupInfo(r, o.side, o.group).leaders.push([o.t, o.unit]); break;
         case "perf": r.perf.push(o); break;
@@ -542,6 +555,11 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
     return s;
   }
   const lastOf = (arr, time) => { const i = idx(arr, time); return i < 0 ? null : arr[i]; };
+  const loadoutAt = (e, time) => lastOf(e.loadouts, time);
+  const roleNameAt = (e, time) => {
+    const loadout = loadoutAt(e, time);
+    return loadout ? loadout[4] || loadout[3] : e.loadouts.length ? "" : e.role_name || e.role;
+  };
   // Same for lists of { t, ... } objects.
   function lastAt(arr, time) {
     let lo = 0, hi = arr.length - 1, ans = null;
@@ -667,11 +685,11 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
   // tools/export_icons.py) the textures as PNG (aar-icons.json, which lists PNG files beside it or
   // holds them as data URIs). They are opened like a recording, or found next to the page or in aar/
   // when served over http, and kept in IndexedDB for next time.
-  const game = { vehicles: {}, weapons: {}, factions: {}, vehicle_icons: {}, icons: {}, images: new Map(), tinted: new Map() };
+  const game = { vehicles: {}, weapons: {}, factions: {}, vehicle_icons: {}, marker_icons: {}, marker_defaults: {}, icons: {}, images: new Map(), tinted: new Map() };
   const texKey = p => { p = lc(p).replace(/\//g, "\\").replace(/^\\+/, ""); return p && !/\.[^\\]*$/.test(p) ? p + ".paa" : p; };
   function applyGame(pack) {
     const low = o => Object.fromEntries(Object.entries(o || {}).map(([k, v]) => [lc(k), v]));
-    if (pack.format === "aar-cfg") for (const k of ["vehicles", "weapons", "factions", "vehicle_icons"]) game[k] = low(pack[k]);
+    if (pack.format === "aar-cfg") for (const k of ["vehicles", "weapons", "factions", "vehicle_icons", "marker_icons", "marker_defaults"]) game[k] = low(pack[k]);
     else if (pack.format === "aar-icons") { Object.assign(game.icons, pack.icons || {}); game.images.clear(); game.tinted.clear(); }
     else return false;
     cardKey = ""; feedKey = "";
@@ -707,8 +725,12 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
   const weaponName = c => (game.weapons[lc(c)] || [])[0] || c;
   const factionName = c => (game.factions[lc(c)] || [])[0] || c;
   const vehicleRow = e => game.vehicles[lc(e.cls)] || [];
-  // The map icon texture: the recording's own, else the one the config export gives for its class.
-  const iconPath = e => e.icon_path || game.vehicle_icons[lc(e.icon || vehicleRow(e)[2])] || "";
+  // The icon may be a CfgVehicleIcons class or a texture path stored directly on a vehicle config.
+  const iconPath = e => {
+    if (e.icon_path) return e.icon_path;
+    const icon = e.icon || vehicleRow(e)[2] || "";
+    return /[\\/]/.test(icon) ? icon : game.vehicle_icons[lc(icon)] || "";
+  };
   function texture(path) {
     const k = texKey(path), uri = game.icons[k] || iconFromConf(k);
     if (!uri) return null;
@@ -757,13 +779,30 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
     for (const k of ["ground", "panel", "ink", "ink-soft", "rule", "grid", "grid-major", "accent", "west", "east", "guer", "civ", "dead", "radio", "chat"]) C[k] = cs.getPropertyValue("--" + k).trim();
   }
   const sideColor = s => ({ WEST: C.west, EAST: C.east, GUER: C.guer, CIV: C.civ })[s] || C["ink-soft"];
-  // Arma marker colour classes; anything unknown is drawn in the soft ink colour.
-  // Side colours follow the page theme; the rest are Arma's own CfgMarkerColors values.
-  const MARKER_COLORS = { ColorBLUFOR: "west", ColorWEST: "west", ColorOPFOR: "east", ColorEAST: "east",
-    ColorIndependent: "guer", ColorGUER: "guer", ColorCivilian: "civ", ColorCIV: "civ", ColorBlack: "ink", Default: "ink" };
-  const MARKER_RGB = { ColorRed: "#e60000", ColorBlue: "#0000e6", ColorGreen: "#00cc00", ColorYellow: "#d9d900", ColorOrange: "#d96600", ColorBrown: "#804000",
-    ColorKhaki: "#809966", ColorPink: "#ff4d66", ColorWhite: "#ffffff", ColorGrey: "#808080", ColorUNKNOWN: "#b39900" };
-  const markerColor = c => MARKER_RGB[c] || C[MARKER_COLORS[c] || "ink-soft"];
+  // Arma CfgMarkerColors values read from the running game config.
+  const MARKER_RGBA = {
+    default: [0, 0, 0, 1], colorblack: [0, 0, 0, 1], colorgrey: [.5, .5, .5, 1],
+    colorred: [.9, 0, 0, 1], colorbrown: [.5, .25, 0, 1], colororange: [.85, .4, 0, 1],
+    coloryellow: [.85, .85, 0, 1], colorkhaki: [.5, .6, .4, 1], colorgreen: [0, .8, 0, 1],
+    colorblue: [0, 0, 1, 1], colorpink: [1, .3, .4, 1], colorwhite: [1, 1, 1, 1],
+    colorwest: [0, .3, .6, 1], colorblufor: [0, .3, .6, 1], coloropfor: [.5, 0, 0, 1],
+    coloreast: [.5, 0, 0, 1], colorguer: [0, .5, 0, 1], colorindependent: [0, .5, 0, 1],
+    colorciv: [.4, 0, .5, 1], colorcivilian: [.4, 0, .5, 1], colorunknown: [.7, .6, 0, 1],
+    color1_fd_f: [.694118, .2, .223529, 1], color2_fd_f: [.678431, .74902, .513726, 1],
+    color3_fd_f: [.941176, .509804, .192157, 1], color4_fd_f: [.403922, .545098, .607843, 1],
+    color5_fd_f: [.690196, .25098, .654902, 1], color6_fd_f: [.352941, .34902, .352941, 1]
+  };
+  const markerColor = (c, type) => {
+    const key = lc(c), marker = lc(type);
+    const markerDefault = game.marker_defaults[marker];
+    const faction = marker.match(/^([obnc])_/);
+    const factionColor = key === "default" && faction && ({ o: "coloropfor", b: "colorblufor", n: "colorguer", c: "colorciv" })[faction[1]];
+    const rgba = key === "default" && markerDefault && Array.isArray(markerDefault[0]) ? markerDefault[0] : MARKER_RGBA[factionColor || key];
+    if (!rgba || rgba.length < 3 || rgba.slice(0, 4).some(v => typeof v !== "number" || !Number.isFinite(v))) return "#b39900";
+    const channel = i => Math.round(Math.max(0, Math.min(1, rgba[i])) * 255);
+    const alpha = rgba.length > 3 ? Math.max(0, Math.min(1, rgba[3])) : 1;
+    return "rgba(" + channel(0) + "," + channel(1) + "," + channel(2) + "," + alpha + ")";
+  };
   const sideName = s => ({ WEST: "BLUFOR", EAST: "OPFOR", GUER: "Independent", CIV: "Civilian" })[s] || s;
   // Arma chat channel numbers; 6-15 are the mission's custom channels.
   const CHAT_CHANNELS = ["Global", "Side", "Command", "Group", "Vehicle", "Direct"];
@@ -1040,9 +1079,9 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
   function drawMarkerAreas(ctx) {
     for (const m of rec.markers.values()) {
       const st = markerAt(m, t); if (!st) continue;
-      const col = markerColor(st.color);
+      const col = markerColor(st.color, st.type);
       if (st.shape === "POLYLINE" && Array.isArray(st.line) && st.line.length >= 4) {
-        ctx.globalAlpha = st.alpha; ctx.strokeStyle = col; ctx.lineWidth = 2; ctx.lineJoin = ctx.lineCap = "round";
+        ctx.globalAlpha = st.alpha; ctx.strokeStyle = col; ctx.lineWidth = Math.max(1, (st.size && st.size[0]) || 1); ctx.lineJoin = ctx.lineCap = "round";
         ctx.beginPath();
         for (let i = 0; i + 1 < st.line.length; i += 2) { const [x, y] = toScreen(st.line[i], st.line[i + 1]); i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); }
         ctx.stroke(); ctx.globalAlpha = 1; continue;
@@ -1058,12 +1097,12 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
       ctx.globalAlpha = 1;
     }
   }
-  // Icon markers as simple shapes: the common hd_ / mil_ types get their own outline, NATO
-  // symbols a frame, and anything else a diamond. "Empty" markers are text only.
-  function markerIcon(ctx, type, sx, sy, r, dir, col) {
+  // Fallback for markers missing a texture mapping: common hd_ / mil_ types get simple outlines.
+  function markerIcon(ctx, type, sx, sy, rx, ry, dir, col) {
     const k = String(type || "").toLowerCase().replace(/^(hd|mil)_/, "");
     ctx.fillStyle = col; ctx.strokeStyle = col; ctx.lineWidth = 2;
-    const poly = (pts, fill) => { ctx.beginPath(); pts.forEach(([x, y], i) => i ? ctx.lineTo(sx + x * r, sy + y * r) : ctx.moveTo(sx + x * r, sy + y * r)); ctx.closePath(); fill ? ctx.fill() : ctx.stroke(); };
+    const r = Math.min(rx, ry);
+    const poly = (pts, fill) => { ctx.beginPath(); pts.forEach(([x, y], i) => i ? ctx.lineTo(sx + x * rx, sy + y * ry) : ctx.moveTo(sx + x * rx, sy + y * ry)); ctx.closePath(); fill ? ctx.fill() : ctx.stroke(); };
     if (k === "empty") return false;
     if (/^dot|^circle$/.test(k)) { ctx.beginPath(); ctx.arc(sx, sy, r * (k === "circle" ? .8 : .45), 0, Math.PI * 2); k === "circle" ? ctx.stroke() : ctx.fill(); }
     else if (/^arrow|^ambush/.test(k)) {
@@ -1085,14 +1124,22 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
     for (const m of rec.markers.values()) {
       const st = markerAt(m, t); if (!st || (st.shape && st.shape !== "ICON")) continue;
       const [sx, sy] = toScreen(st.pos[0], st.pos[1]);
-      const r = 6 * Math.min(3, Math.max(.5, (st.size && st.size[0]) || 1));
+      const size = st.size || [1, 1], width = 32 * Math.abs(Number(size[0]) || 0), height = 32 * Math.abs(Number(size[1]) || 0);
+      if (!width || !height) continue;
       ctx.globalAlpha = st.alpha;
-      const icon = markerIcon(ctx, st.type, sx, sy, r, st.dir, markerColor(st.color));
+      const iconPath = game.marker_icons[lc(st.type)] || "";
+      const markerDefault = game.marker_defaults[lc(st.type)];
+      const tintable = markerDefault ? markerDefault[1] : !/^flag_/i.test(st.type);
+      const iconImage = iconPath && (tintable ? tinted(iconPath, markerColor(st.color, st.type)) : texture(iconPath));
+      const icon = iconImage ? (() => {
+        ctx.save(); ctx.translate(sx, sy); ctx.rotate((st.dir || 0) * Math.PI / 180);
+        ctx.drawImage(iconImage, -width / 2, -height / 2, width, height); ctx.restore(); return true;
+      })() : markerIcon(ctx, st.type, sx, sy, width / 2, height / 2, st.dir, markerColor(st.color, st.type));
       if (st.text) {
         ctx.font = "600 12px " + font; ctx.textAlign = icon ? "left" : "center"; ctx.textBaseline = "middle";
-        const x = icon ? sx + r + 4 : sx;
+        const x = icon ? sx + width / 2 + 4 : sx;
         ctx.lineWidth = 3; ctx.strokeStyle = C.ground; ctx.strokeText(st.text, x, sy);
-        ctx.fillStyle = C.ink; ctx.fillText(st.text, x, sy);
+        ctx.fillStyle = markerColor(st.color, st.type); ctx.fillText(st.text, x, sy);
       }
       ctx.globalAlpha = 1;
     }
@@ -1239,7 +1286,7 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
     const f = String(path || "").split(/[\\/]/).pop().toLowerCase().replace(/\.paa$/, "");
     if (!f || f === "empty") return null;
     const m = f.match(/^(blue|red|green|yellow|orange|purple|gray)(?:_(.+))?$/);
-    return m ? { fill: TMF_FILL[m[1]], symbol: m[2] || "blank" } : { fill: null, symbol: "inf" };
+    return m ? { path, fill: TMF_FILL[m[1]], symbol: m[2] || "blank" } : { path, fill: null, symbol: "inf" };
   }
   const tmfSize = path => (String(path || "").toLowerCase().match(/modif_(o|dot|2dot|3dot|company)/) || [])[1] || "";
 
@@ -1287,12 +1334,17 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
 
   let groupHits = [];   // [sx, sy, marker] for hovering
   function drawGroups(ctx, states) {
+    const playerSides = new Set();
+    if (groupMarkerMode === "player-sides") for (const [e] of states) {
+      if (e.kind === "unit" && isPlayerAt(e, t)) playerSides.add(sideAt(e, t));
+    }
     // Leaves: one per group with living members.
     const groups = new Map();
     for (const [e, s] of states) {
       if (e.kind !== "unit" || !s.alive) continue;
       const name = groupAt(e, t); if (!name) continue;
       const side = sideAt(e, t), k = groupKey(side, name);
+      if (groupMarkerMode === "player-sides" && !playerSides.has(side)) continue;
       let g = groups.get(k);
       if (!g) { g = { key: k, name, side, units: [], x: 0, y: 0, nodes: new Map() }; groups.set(k, g); }
       g.units.push(e); g.x += s.x; g.y += s.y;
@@ -1310,6 +1362,7 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
       // No TMF_groupMarker: TMF falls back to the parent node's texture with the group's name.
       const tex = tmfTexture(own ? own[0] : node && node.icon);
       return { key: g.key, x: g.x, y: g.y, far: [g.x, g.y], side: g.side, groups: [g], tex, size: own ? tmfSize(own[1]) : "",
+        sizePath: own && own[1] || node && node.modifier || "",
         text: shortName(g.side, g.name) || g.name, title: g.name };
     };
     const mean = (it, kids) => {
@@ -1335,7 +1388,8 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
     const build = node => {
       const kids = [...(under.get(node) || []).map(g => leaf(g, node)), ...(node.children || []).map(build).filter(Boolean)];
       if (!kids.length) return null;
-      return mean({ kids, tex: tmfTexture(node.icon), size: tmfSize(node.modifier), text: node.name || "", title: node.full_name || node.name || "ORBAT" }, kids);
+      return mean({ kids, tex: tmfTexture(node.icon), size: tmfSize(node.modifier), sizePath: node.modifier || "",
+        text: node.name || "", title: node.full_name || node.name || "ORBAT" }, kids);
     };
     const roots = rec.orbat ? rec.orbat.teams.map(build).filter(Boolean) : [];
     // Outside the ORBAT: per side, the closest two markers merge while everything in the merged one
@@ -1378,7 +1432,12 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
     for (const m of out) {
       const [x, y] = toScreen(m.x, m.y);
       ctx.globalAlpha = fade;
-      drawSymbol(ctx, x, y, m.tex ? m.tex.symbol : "inf", (m.tex && m.tex.fill) || sideColor(m.side), m.size);
+      const image = m.tex && m.tex.path && texture(m.tex.path);
+      if (image) {
+        drawIcon(ctx, image, x, y, 0, 32);
+        const modifier = m.sizePath && texture(m.sizePath);
+        if (modifier) drawIcon(ctx, modifier, x, y - 19, 0, 10);
+      } else drawSymbol(ctx, x, y, m.tex ? m.tex.symbol : "inf", (m.tex && m.tex.fill) || sideColor(m.side), m.size);
       if (m.kids && !m.tex) { ctx.strokeStyle = "#151515"; ctx.lineWidth = 1; ctx.strokeRect(x - 16, y - 12, 32, 24); }
       if (m.sib * view.scale >= LABEL_PX && m.text) {
         ctx.font = "600 12px " + font; ctx.textAlign = "left"; ctx.textBaseline = "middle";
@@ -1437,7 +1496,7 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
     const e = rec.entities.get(best);
     if (e.kind === "unit") {
       const grp = groupAt(e, t);
-      const lines = [[nameAt(e, t)], [(e.role_name || slotName(e) || e.display) + (grp ? " · " + (shortName(sideAt(e, t), grp) || grp) : ""), C["ink-soft"]]];
+      const lines = [[nameAt(e, t)], [(roleNameAt(e, t) || slotName(e) || e.display) + (grp ? " · " + (shortName(sideAt(e, t), grp) || grp) : ""), C["ink-soft"]]];
       const s = stateAt(e, t);
       if (s && s.alive && downAt(e, t)) lines.push(["Unconscious", C.east]);
       tooltip(ctx, hx, hy, lines);
@@ -1652,7 +1711,7 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
       case "get_in": return ["vehicles", who(o.unit, o.t) + " got in " + who(o.vehicle, o.t) + ' <span class="tag">' + esc(o.role) + "</span>"];
       case "get_out": return ["vehicles", who(o.unit, o.t) + (o.eject ? " ejected from " : " got out of ") + who(o.vehicle, o.t)];
       case "seat": return ["vehicles", who(o.unit, o.t) + " moved to " + esc(o.role) + " in " + who(o.vehicle, o.t)];
-      case "loadout": return ["players", who(o.unit, o.t) + " got the " + esc(o.role_name || o.role) + ' loadout <span class="tag">' + esc(o.loadout_faction) + "</span>"];
+      case "loadout": return ["players", who(o.unit, o.t) + " got the " + esc(o.role_name || o.role) + ' loadout <span class="tag">' + esc(o.loadout_faction_name || o.loadout_faction) + "</span>"];
       case "combat_mode": return ["ai", '<span class="who s-' + esc(o.side) + '">' + esc(o.group) + '</span> is now <span class="tag">' + esc(o.mode) + "</span>"];
       case "enemy_detected": return ["ai", '<span class="who s-' + esc(o.side) + '">' + esc(o.group) + "</span> spotted " + who(o.target, o.t)];
       case "fleeing": return ["ai", '<span class="who s-' + esc(o.side) + '">' + esc(o.group) + "</span> " + (o.fleeing ? "started fleeing" : "stopped fleeing")];
@@ -1709,14 +1768,27 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
   const SIDE_VAR = { WEST: "west", EAST: "east", GUER: "guer", CIV: "civ" };
   function unitButton(e, sd) {
     const s = stateAt(e, t), dead = s && !s.alive;
-    const sub = e.role_name || e.callsign || e.display;
+    const sub = roleNameAt(e, t) || e.callsign || e.display;
     return '<button data-id="' + e.id + '" aria-pressed="' + (e.id === selected) + '"><i class="dot" style="background:' + (dead ? "var(--dead)" : "var(--" + (SIDE_VAR[sd] || "ink-soft") + ")") + '"></i><span class="' + (dead ? "dead" : "") + '">' + esc(nameAt(e, t)) + (isPlayerAt(e, t) ? " <small>player</small>" : "") + "</span><small>" + esc(sub) + "</small></button>";
   }
   const aliveUnit = e => { if (e.kind !== "unit") return null; const s = stateAt(e, t); return s ? s.alive : null; };
   function renderGroups() {
     const sides = new Map();
+    const playerSides = new Set();
+    const playerGroups = new Set();
+    if (unitFilterMode === "player-or-tmf") {
+      for (const e of rec.entities.values()) {
+        if (e.kind !== "unit" || !isPlayerAt(e, t) || !stateAt(e, t)) continue;
+        const sd = sideAt(e, t), group = groupAt(e, t) || "No group";
+        playerSides.add(sd);
+        playerGroups.add(groupKey(sd, group));
+      }
+    }
     for (const e of rec.entities.values()) {
-      const sd = sideAt(e, t), g = e.kind === "unit" ? (groupAt(e, t) || "No group") : "Vehicles";
+      const sd = sideAt(e, t);
+      const g = e.kind === "unit" ? (groupAt(e, t) || "No group") : "Vehicles";
+      if (unitFilterMode === "player-or-tmf" &&
+          (e.kind === "unit" ? !playerGroups.has(groupKey(sd, g)) && !rec.groupIcon.has(groupKey(sd, g)) : !playerSides.has(sd))) continue;
       if (!sides.has(sd)) sides.set(sd, new Map());
       const gm = sides.get(sd); if (!gm.has(g)) gm.set(g, []); gm.get(g).push(e);
     }
@@ -1734,20 +1806,37 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
     return html;
   }
   // TMF ORBAT: every node lists the units and vehicles placed under it; an entity without a node
-  // belongs under the root of its side's tree, as in TMF's briefing.
+  // belongs under the root of its faction or side tree, as in TMF's briefing.
   function renderOrbat() {
     const at = new Map(), loose = [];
-    const rootFor = sd => rec.orbat.teams.find(tm => tm.side === sd);
+    const playerSides = new Set(), playerGroups = new Set();
+    if (unitFilterMode === "player-or-tmf") for (const e of rec.entities.values()) {
+      if (e.kind !== "unit" || !isPlayerAt(e, t) || !stateAt(e, t)) continue;
+      const sd = sideAt(e, t), group = groupAt(e, t) || "No group";
+      playerSides.add(sd);
+      playerGroups.add(groupKey(sd, group));
+    }
+    const visible = e => {
+      if (unitFilterMode !== "player-or-tmf") return true;
+      const sd = sideAt(e, t);
+      if (e.kind !== "unit") return playerSides.has(sd);
+      const group = groupAt(e, t) || "No group", key = groupKey(sd, group);
+      return playerGroups.has(key) || rec.groupIcon.has(key);
+    };
+    const rootFor = e => rec.orbat.teams.find(tm => tm.faction && tm.faction === e.faction) ||
+      rec.orbat.teams.find(tm => tm.side === sideAt(e, t));
     for (const e of rec.entities.values()) {
+      if (!visible(e)) continue;
       const sd = sideAt(e, t);
       const id = orbatAt(e, t);
       const n = id !== undefined && rec.nodes.get(id);
-      const node = n ? n.node : rootFor(sd);
+      const node = n ? n.node : rootFor(e);
       if (!node) { loose.push(e); continue; }
       if (!at.has(node)) at.set(node, []); at.get(node).push(e);
     }
     const count = node => { let a = 0, n = 0; for (const e of at.get(node) || []) { const x = aliveUnit(e); if (x === null) continue; n++; if (x) a++; } for (const c of node.children || []) { const [ca, cn] = count(c); a += ca; n += cn; } return [a, n]; };
     const draw = (node, sd) => {
+      if (!hasEntities(node)) return "";
       const [a, n] = count(node);
       let h = '<h4 class="node"><span>' + esc(node.name || node.full_name || "Node " + node.id) + (node.name && node.full_name && node.full_name.trim() !== node.name ? ' <small>' + esc(node.full_name) + "</small>" : "") + "</span><small>" + (n ? a + "/" + n + " alive" : "") + "</small></h4>";
       const list = (at.get(node) || []).sort((x, y) => (x.kind !== "unit") - (y.kind !== "unit") || (groupAt(x, t) || "").localeCompare(groupAt(y, t) || "") || x.id - y.id);
@@ -1756,11 +1845,39 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
       if (kids.length) h += '<div class="indent">' + kids.map(c => draw(c, sd)).join("") + "</div>";
       return h;
     };
+    const entitiesIn = node => [...(at.get(node) || []), ...(node.children || []).flatMap(entitiesIn)];
+    const hasEntities = node => (at.get(node) || []).length > 0 || (node.children || []).some(hasEntities);
+    const orbatSideName = sd => ({ WEST: "BLUFOR", EAST: "OPFOR", GUER: "INDEPENDENT", CIV: "CIVILIAN" })[sd] || sideName(sd);
+    const teamHeading = team => {
+      const entities = entitiesIn(team);
+      const factions = new Map();
+      const sides = new Map();
+      for (const e of entities) {
+        if (e.kind !== "unit") continue;
+        const loadout = loadoutAt(e, t);
+        const name = String(loadout ? loadout[2] : e.loadouts.length ? "" : e.loadout_faction_name || "").trim();
+        if (name) {
+          if (!factions.has(name.toLowerCase())) factions.set(name.toLowerCase(), name);
+          const sd = sideAt(e, t);
+          if (sd) sides.set(sd, (sides.get(sd) || 0) + 1);
+        }
+      }
+      const names = [...factions.values()].sort((a, b) => a.localeCompare(b));
+      if (names.length === 1) return names[0];
+      if (names.length > 1) {
+        const side = team.side || [...sides].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))[0]?.[0];
+        return (side ? orbatSideName(side) : "Team") + " - " + names.join(", ");
+      }
+      if (team.side) return orbatSideName(team.side);
+      const faction = team.faction ? factionName(team.faction) : "";
+      return faction || team.name || "Team";
+    };
     let html = "";
     for (const team of rec.orbat.teams) {
+      if (!hasEntities(team)) continue;
       const sd = team.side || "";
       const [a, n] = count(team);
-      html += '<h3 class="s-' + esc(sd) + '">' + esc(team.side ? sideName(team.side) : team.faction || "Team") + "<span>" + a + "/" + n + " alive</span></h3>" + draw(team, sd);
+      html += '<h3 class="s-' + esc(sd) + '">' + esc(teamHeading(team)) + "<span>" + a + "/" + n + " alive</span></h3>" + draw(team, sd);
     }
     if (loose.length) {
       html += "<h3>Not in the ORBAT</h3>";
@@ -1770,7 +1887,7 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
   }
   function renderRoster(force) {
     if (!rec || $("pane-units").hidden) return;
-    const key = Math.floor(t) + "|" + selected + "|" + unitMode;
+    const key = Math.floor(t) + "|" + selected + "|" + unitMode + "|" + unitFilterMode;
     if (!force && key === rosterKey) return;
     rosterKey = key;
     $("roster").innerHTML = rec.orbat && unitMode === "orbat" ? renderOrbat() : renderGroups();
@@ -1790,21 +1907,24 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
     const shotsBy = countTo(shots, t), killsBy = countTo(kills, t);
     const dShots = shotsBy - countTo(shots, t - DELTA_S), dKills = killsBy - countTo(kills, t - DELTA_S);
     const key = selected + "|" + (s ? [Math.round(s.x), Math.round(s.y), s.alive, s.dmg, s.veh, down].join() : "x") + "|" + follow + "|" + onAir + "|" + idx(e.radios, t) +
-      "|" + [shotsBy, killsBy, dShots, dKills].join();
+      "|" + idx(e.loadouts, t) + "|" + [shotsBy, killsBy, dShots, dKills].join();
     if (!force && key === cardKey) return;
     cardKey = key;
     const veh = s && s.veh ? rec.entities.get(s.veh) : null;
     const oid = orbatAt(e, t), node = oid !== undefined ? rec.nodes.get(oid) : null;
+    const loadout = loadoutAt(e, t);
+    const loadoutFactionName = loadout ? loadout[2] : e.loadouts.length ? "" : e.loadout_faction_name;
+    const roleName = roleNameAt(e, t);
     // Vehicle pictures are white silhouettes, so drawn in the ink colour to show on either theme.
     const pic = tinted(vehicleRow(e)[1], C.ink);
     let picUrl = ""; try { picUrl = pic ? pic.toDataURL() : ""; } catch (_) {}
     card.innerHTML = (picUrl ? '<img class="pic" alt="" src="' + picUrl + '">' : "") + '<h2 class="s-' + esc(sideAt(e, t)) + '">' + esc(nameAt(e, t)) + '</h2><div class="tag">' + esc(e.display) + " · " + esc(e.cls) + "</div><dl>" +
       "<dt>Status</dt><dd>" + (!s ? "not present" : s.alive ? (down ? "unconscious, " : "alive, ") + Math.round(s.dmg * 100) + "% damage" : "dead") + "</dd>" +
-      (e.faction_name || e.faction ? "<dt>Faction</dt><dd>" + esc(e.faction_name || factionName(e.faction)) + "</dd>" : "") +
+      (loadoutFactionName || e.faction_name || e.faction ? "<dt>Faction</dt><dd>" + esc(loadoutFactionName || e.faction_name || factionName(e.faction)) + "</dd>" : "") +
       (e.role_desc ? "<dt>Slot</dt><dd>" + esc(e.role_desc) + "</dd>" : "") +
       (e.var_name ? "<dt>Variable</dt><dd>" + esc(e.var_name) + "</dd>" : "") +
       (e.kind === "unit" ? "<dt>Group</dt><dd>" + esc(groupAt(e, t) || "–") + (shortName(sideAt(e, t), groupAt(e, t)) ? " · " + esc(shortName(sideAt(e, t), groupAt(e, t))) : "") + "</dd>" : "") +
-      (e.role_name || e.role ? "<dt>Role</dt><dd>" + esc(e.role_name || e.role) + (e.loadout_faction ? " · " + esc(e.loadout_faction) : "") + "</dd>" : "") +
+      (roleName ? "<dt>Role</dt><dd>" + esc(roleName) + "</dd>" : "") +
       (node ? "<dt>ORBAT</dt><dd>" + node.path.map(n => esc(n.name)).join(" › ") + "</dd>" : "") +
       radioRows(e) +
       (e.callsign ? "<dt>Callsign</dt><dd>" + esc(e.callsign) + "</dd>" : "") +
@@ -1952,6 +2072,9 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
   function renderLayers() {
     $("layers").innerHTML = "<h3>Show on map</h3>" +
       LAYERS.map(([k, label]) => '<label><input type="checkbox" data-layer="' + k + '"' + (layers[k] ? " checked" : "") + ">" + label + "</label>").join("") +
+      '<div class="row"><label for="group-marker-mode">Map group markers</label><select id="group-marker-mode">' +
+      '<option value="all"' + (groupMarkerMode === "all" ? " selected" : "") + '>All sides</option>' +
+      '<option value="player-sides"' + (groupMarkerMode === "player-sides" ? " selected" : "") + '>Sides with players</option></select></div>' +
       '<div class="row"><button class="btn" data-all="1">All</button><button class="btn" data-all="0">None</button></div>';
   }
   function setLayer(k, on) {
@@ -1959,7 +2082,15 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
     prefs.layers = Object.fromEntries(LAYERS.filter(([x]) => !layers[x]).map(([x]) => [x, false]));
     savePrefs();
   }
-  $("layers").addEventListener("change", e => { const k = e.target.dataset.layer; if (k) setLayer(k, e.target.checked); });
+  $("layers").addEventListener("change", e => {
+    if (e.target.id === "group-marker-mode") {
+      groupMarkerMode = e.target.value === "player-sides" ? "player-sides" : "all";
+      prefs.groupMarkerMode = groupMarkerMode;
+      savePrefs();
+      return;
+    }
+    const k = e.target.dataset.layer; if (k) setLayer(k, e.target.checked);
+  });
   $("layers").addEventListener("click", e => {
     const b = e.target.closest("button[data-all]"); if (!b) return;
     for (const [k] of LAYERS) setLayer(k, b.dataset.all === "1");
@@ -2192,7 +2323,7 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
       rec = r; t = 0; selected = 0; follow = false; playing = false; setPlayIcon();
       setClip(null); setLink(null); $("sharebtn").hidden = false; showShare(false);
       $("error").hidden = true;
-      unitMode = r.orbat ? "orbat" : "groups"; $("unitmode").hidden = !r.orbat; setUnitMode(unitMode);
+      unitMode = r.orbat ? "orbat" : "groups"; $("orbat-mode").hidden = !r.orbat; setUnitMode(unitMode);
       dataType = null; dataLimit = 100; dataQuery = "";
       document.title = missionTitle(r.header) + " · " + (conf.title || "AAR Viewer");
       renderMeta(); resize(); readColors(); fit(); feedKey = ""; renderFeed(true); renderRoster(true); renderCard(true);
@@ -2227,8 +2358,20 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
       renderRoster(true); drawCharts();
     };
   }
-  function setUnitMode(m) { unitMode = m; for (const b of $("unitmode").children) b.setAttribute("aria-pressed", b.dataset.m === m); renderRoster(true); }
-  $("unitmode").onclick = e => { const b = e.target.closest("button[data-m]"); if (b) setUnitMode(b.dataset.m); };
+  function setUnitMode(m) { unitMode = m; for (const b of $("unitmode").querySelectorAll("button[data-m]")) b.setAttribute("aria-pressed", b.dataset.m === m); renderRoster(true); }
+  $("unitmode").onclick = e => {
+    const mode = e.target.closest("button[data-m]");
+    if (mode) { setUnitMode(mode.dataset.m); return; }
+    if (e.target.closest("#show-all-units")) setUnitFilterMode(unitFilterMode === "all" ? "player-or-tmf" : "all");
+  };
+  function setUnitFilterMode(mode) {
+    unitFilterMode = mode;
+    prefs.unitFilterMode = unitFilterMode;
+    savePrefs();
+    $("show-all-units").setAttribute("aria-pressed", unitFilterMode === "all");
+    renderRoster(true);
+  }
+  $("show-all-units").setAttribute("aria-pressed", unitFilterMode === "all");
   // Anything with a time in the Mission, Server and Data tabs seeks there when clicked.
   for (const name of ["radio", "chat", "mission", "server", "data"]) $("pane-" + name).addEventListener("click", e => { const x = e.target.closest("[data-t]"); if (x && rec) t = Math.min(rec.duration, +x.dataset.t); });
   $("pane-data").addEventListener("click", e => {

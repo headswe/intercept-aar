@@ -8,6 +8,8 @@
  *   weapons:       class -> [display name, picture]
  *   factions:      class -> [display name, flag]
  *   vehicle_icons: CfgVehicleIcons class -> texture
+ *   marker_icons:  CfgMarkers class -> texture
+ *   marker_defaults: CfgMarkers class -> [resolved RGBA, showEditorMarkerColor]
  */
 private _out = createHashMap;
 _out set ["format", "aar-cfg"];
@@ -42,6 +44,23 @@ private _icons = createHashMap;
     if (isText _x) then { _icons set [configName _x, getText _x] };
 } forEach configProperties [configFile >> "CfgVehicleIcons", "true", true];
 _out set ["vehicle_icons", _icons];
+
+private _markers = createHashMap;
+{
+    private _icon = getText (_x >> "icon");
+    if (_icon isNotEqualTo "") then { _markers set [configName _x, _icon] };
+} forEach configProperties [configFile >> "CfgMarkers", "true", true];
+_out set ["marker_icons", _markers];
+
+private _markerDefaults = createHashMap;
+{
+    private _color = getArray (_x >> "color");
+    if (count _color >= 3) then {
+        _color = _color apply {if (_x isEqualType "") then {call compile _x} else {_x}};
+        _markerDefaults set [configName _x, [_color, getNumber (_x >> "showEditorMarkerColor") > 0]];
+    };
+} forEach configProperties [configFile >> "CfgMarkers", "true", true];
+_out set ["marker_defaults", _markerDefaults];
 
 private _json = toJSON _out;
 copyToClipboard _json;
