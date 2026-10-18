@@ -25,3 +25,4 @@ private _add = {
 
 ["frameBudget", "SLIDER", ["Frame budget (ms)", "Recorder work per frame; snapshots are spread over frames to stay near it."], "Performance", [0.1, 20, 2, 1]] call _add;
 ["spikeThreshold", "SLIDER", ["Spike threshold (ms)", "Server frames slower than this get a perf_spike record and an RPT line."], "Performance", [1, 1000, 100, 0]] call _add;
+["netInterval", "SLIDER", ["Network interval", "Seconds between net records (client ping, desync, bandwidth; server UDP queues). 0 = off."], "Performance", [0, 120, 10, 0]] call _add;
