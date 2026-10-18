@@ -110,8 +110,9 @@ Open the viewer on GitHub Pages (https://headswe.github.io/intercept-aar/, publi
 
 Served from a web server, the viewer also looks for an `aar/` folder next to the page and lists the `.jsonl` recordings in it under **Recordings**, newest first. It reads `aar/index.json` if there is one (a JSON list of file names, or of `{"name", "size", "modified"}`), otherwise the server's directory listing (nginx `autoindex on`, Apache `Options +Indexes`, `python3 -m http.server`). So putting `aar-viewer.html` next to the server's `aar` folder and serving that directory is enough. A page opened straight from disk can't list folders, so the button stays hidden there.
 
-- **Map:** the mission plays back on a gridded map with Arma grid references: units and vehicles with facing, crew counts and players ringed, tracers from `shot` to `proj_end`, hit flashes, kill sites, map markers (icons, areas with their brush, lines drawn on the map) and destroyed buildings; with a Cover Map module everything outside its area is shaded, as in game. Each group has a TMF-style marker on its leader: its TMF group marker icon, size and text, with the same symbols and squad colours as TMF's ORBAT tracker (groups without one get their ORBAT node's icon, or a plain marker in their side's colour, and their group name). Markers merge up the TMF ORBAT by TMF's own rules: a node sits at the mean of its groups and sub-nodes, and once its furthest group is within about 54 px of it on screen (0.05 Arma screen units) the node's marker replaces theirs; nodes without an icon never merge. A marker's text is hidden while a sibling sits within about 40 px. Markers keep one size at every zoom and fade when zoomed in close. Groups outside the ORBAT merge with nearby groups of the same side by the same distance. Hover a marker for the group's name, AI behaviour (`SAFE`, `COMBAT`, ...), whether it is fleeing and its players; hover a unit for its name. Unconscious units are drawn faded with a dashed ring and no facing; zoomed in, a unit's dot carries a letter for its class's map icon (`L` leader, `O` officer, `M` machine gunner, `A` AT, `+` medic, `E` engineer, `X` explosives, `R` recon). Recent events float as short labels over the unit or group they concern for a few seconds (behaviour changes, enemy spotted with a dashed line to the target, fleeing, vehicle seats, loadouts, respawns, kills). Per-unit event labels show only once units are far enough apart to tell apart; `AWARE`, the AI default, is not labelled. Click a unit to see its status (including unconscious), faction, slot description, variable name, TMF role and ORBAT position, and to follow it. Kills in the event feed show the weapon and distance.
-- **Link to a recording:** `?src=<url>` opens a recording from a web address, if that server allows cross-origin requests.
+- **Map:** the mission plays back on a gridded map with Arma grid references: units and vehicles with facing, crew counts and players ringed, tracers from `shot` to `proj_end`, hit flashes, kill sites, map markers (icons, areas with their brush, lines drawn on the map) and destroyed buildings; with a Cover Map module everything outside its area is shaded, as in game. Each group has a TMF-style marker on its leader: its TMF group marker icon, size and text, with the same symbols and squad colours as TMF's ORBAT tracker (groups without one get their ORBAT node's icon, or a plain marker in their side's colour, and their group name). Markers merge up the TMF ORBAT by TMF's own rules: a node sits at the mean of its groups and sub-nodes, and once its furthest group is within about 54 px of it on screen (0.05 Arma screen units) the node's marker replaces theirs; nodes without an icon never merge. A marker's text is hidden while a sibling sits within about 40 px. Markers keep one size at every zoom and fade when zoomed in close. Groups outside the ORBAT merge with nearby groups of the same side by the same distance. Hover a marker for the group's name, AI behaviour (`SAFE`, `COMBAT`, ...), whether it is fleeing and its players; hover a unit for its name. Unconscious units are drawn faded with a dashed ring and no facing; zoomed in, a unit's dot carries a letter for its class's map icon (`L` leader, `O` officer, `M` machine gunner, `A` AT, `+` medic, `E` engineer, `X` explosives, `R` recon). Recent events float as short labels over the unit or group they concern for a few seconds (behaviour changes, enemy spotted with a dashed line to the target, fleeing, vehicle seats, loadouts, respawns, kills). Per-unit event labels show only once units are far enough apart to tell apart; `AWARE`, the AI default, is not labelled. Click a unit to see its status (including unconscious), faction, slot description, variable name, TMF role and ORBAT position, its shots and kills so far (with `+N` for those in the last 10 seconds), and to follow it. Kills in the event feed show the weapon and distance.
+- **Link to a recording:** `?src=<url>` opens a recording from a web address, if that server allows cross-origin requests. `?recording=<id>` opens one from the **Recordings** list (a file name in the `aar/` folder, or an id from the [recordings API](#recordings-from-an-api)); picking a recording puts it in the address bar, so the link can be shared.
+- **Share a moment or a clip:** **Share** next to the clock copies a link to the current time (`&t=<seconds>`) or to a clip (`&t=` and `&end=`; set its start and end with **Now** or by typing `m:ss`), optionally following the selected unit (`&unit=<id>`). A clip link starts playing at the clip's start, stops at its end, and shades the rest of the timeline; the **Clip** button beside **Share** clears it. Times can also be written `12:34`, `1:02:03` or `12m34s`. A recording opened from a file has no link, so only the time can be shared then. `apiHeaders` is never copied into a shared link.
 - **Map background:** MissionDB's R3-format tiles from `https://mission-db.1tac.eu/tiles/<slug>/tiles/{z}/{x}/{y}.png`, where the slug is the world name in lower case. The viewer first reads `tiles/config.json` (worlds that borrow another terrain's tiles) and `tiles/<slug>/config.json` (size, zoom range, background colour and `version`, which it adds to tile URLs as `?v=` so a re-tiled terrain is not served from cache). The layout follows Leaflet RasterCoords: one pixel per metre at the config's `maxZoom`, row 0 at the north edge, and zooms past it up to `dynamicMaxZoom` rendered on request. The tile host sends no CORS headers, so the page cannot read those files from another site. Instead the Pages build fetches them (`viewer/fetch_terrains.py`, for the worlds in `viewer/terrains.txt`, taken from MissionDB's terrain list, plus every alias) and embeds them in the published page, and a daily run refreshes them. MissionDB sometimes answers 502, so the build retries, keeps any config it still cannot fetch from the published page, and fails rather than replace a page that has configs with one that has none. For a world that is not embedded, or in the downloadable `aar-viewer.html`, the viewer tries the live configs and otherwise uses `world_size` from the header (or a built-in size), computes the same native zoom, and uses a built-in copy of the alias list, which loses only the version and background colour. Add a world to `terrains.txt` to embed its config. Missing tiles fall back to a lower zoom. To use another tile service, see [Your own tiles, names and icons](#your-own-tiles-names-icons-and-look).
 - **Timeline:** shots per second as bars, kills as red ticks, server AI behaviour changes as small dark ticks, frame spikes as amber ticks and idle periods shaded. Click or drag to seek. Space plays and pauses, the arrow keys skip 5 s (30 s with Shift), and `[` / `]` change speed.
 - **Events:** every event up to the current time, filterable by kind (kills, hits, medical, vehicles, players, markers, AI, world, shots); medical covers ACE wounds, treatment and dragging or carrying. Click one to jump to it.
@@ -161,6 +162,10 @@ The viewer's sources and look are set in one place, so it can be pointed at your
   "icons": ["aar-icons.json", "aar/aar-icons.json"],
   "iconUrl": "",
   "recordings": "aar/",
+  "recordingsApi": "",
+  "recordingUrl": "",
+  "apiHeaders": {},
+  "apiCredentials": "",
   "title": "AAR Viewer",
   "logo": "",
   "logoLink": "",
@@ -177,6 +182,7 @@ The viewer's sources and look are set in one place, so it can be pointed at your
 - `cfg` and `icons`: where `aar-cfg.json` (names) and `aar-icons.json` (texture list) are; for each, the first one that loads is used. PNG paths in an icon list are relative to the list. The formats are those of [Names and icons from the game](#names-and-icons-from-the-game): `aar-cfg.json` is `{"format":"aar-cfg","vehicles":{"<class>":["<name>","<picture>","<map icon class>","<faction>"]},"weapons":{"<class>":["<name>","<picture>"]},"factions":{"<class>":["<name>","<flag>"]},"vehicle_icons":{"<CfgVehicleIcons class>":"<texture>"}}` on one line, and `aar-icons.json` is `{"format":"aar-icons","icons":{"<texture path>":"<png url or data: URI>"}}`, with texture paths in lower case with backslashes and `.paa`.
 - `iconUrl`: where to find a texture the icon list does not have, or every texture when there is no list. A base URL like `https://example.com/icons/` takes the extension's layout (`<base>a3/ui_f/data/map/vehicleicons/iconman_ca.png` for `a3\ui_f\data\map\vehicleicons\iconman_ca.paa`); a template takes `{path}` (that path, without the extension) or `{key}` (the game's path, URL-encoded).
 - `recordings`: the folder listed under **Recordings**, read through its `index.json` or the server's directory listing. `""` turns the list off.
+- `recordingsApi`, `recordingUrl`, `apiHeaders`, `apiCredentials`: list and fetch recordings from an API instead of a folder; see [Recordings from an API](#recordings-from-an-api).
 - `title`: the name in the header and the browser tab.
 - `logo` and `logoLink`: an image shown before the title (28 px high), and where clicking it goes.
 - `css`: extra stylesheets loaded after the page's own, for web fonts or any other styling.
@@ -188,6 +194,49 @@ The viewer's sources and look are set in one place, so it can be pointed at your
   ```
 
 Relative URLs are relative to the page. Each key can also be given as a URL parameter, which wins over the file, for example `?tiles=https://tiles.example.com/&cfg=https://data.example.com/aar-cfg.json` (`aliases`, `terrains` and `theme` as JSON). Files on another site need that site to allow cross-origin requests (map tiles and icons excepted; a vehicle card shows its picture from another site only when that site allows it). A page opened from disk cannot read a `viewer-config.json` next to it, so `python3 viewer/build.py --config viewer-config.json` builds an `aar-viewer.html` with the config inside it. A broken config is reported above the map.
+
+#### Recordings from an API
+
+When recordings live behind an application (a database, object storage, a login) rather than in a folder, set `recordingsApi` to a list endpoint and the **Recordings** button lists from it instead of the folder:
+
+```json
+{
+  "recordingsApi": "https://aar.example.com/api/recordings",
+  "recordingUrl": "{api}/{id}",
+  "apiHeaders": { "Authorization": "Bearer <token>" },
+  "apiCredentials": "include"
+}
+```
+
+The viewer sends `GET <recordingsApi>` and expects JSON, either a plain array of entries or an object with the entries and paging:
+
+```json
+{
+  "recordings": [
+    { "id": "20261017-191500_co12_raid_Stratis", "title": "CO12 Village Raid", "world": "Stratis",
+      "date": "2026-10-17T19:15:00Z", "duration": 3540, "size": 18233344,
+      "name": "20261017-191500_co12_raid_Stratis.jsonl", "url": "/files/abc123.jsonl" }
+  ],
+  "next": "/api/recordings?cursor=abc",
+  "total": 214
+}
+```
+
+- `id` (required): any string or number, unique per recording. It is what `?recording=<id>` takes.
+- `title`, `world`, `date` (ISO 8601), `duration` (seconds), `size` (bytes): shown in the list, all optional. Without a `title` the list falls back to the mission and world in a recorder file `name`, then to the `name` or `id` itself.
+- `url` (optional): where to fetch this recording. Without one the viewer fills `recordingUrl` with `{api}` (`recordingsApi` without its query string) and `{id}` (URL-encoded); the default is `{api}/{id}`.
+- `recordings` may also be called `items`. List the newest first; the viewer keeps the order.
+- `next` (optional): the URL of the next page, absolute or relative to the list URL (cursor, offset or page number, whatever the API uses). While there is one, the list ends with **Load more**. `total` (optional) shows as "Recordings (50 of 214)".
+
+A recording URL returns the `.jsonl` text as the recorder wrote it (any content type; gzip it with `Content-Encoding: gzip` to save bandwidth, browsers unpack it). Both kinds of request carry `apiHeaders` and use `apiCredentials` as the fetch `credentials` mode (`"include"` sends the API's cookies to another site, `"omit"` none; the default sends them only to the page's own site). An API on another site must answer CORS: `Access-Control-Allow-Origin` with the viewer's origin, and for headers or cookies the matching `OPTIONS` preflight (`Access-Control-Allow-Headers: Authorization`, `Access-Control-Allow-Credentials: true`). Anything in `apiHeaders` is readable by whoever can load the config, so a bearer token there only suits a private viewer; for a viewer anyone can open, put the API behind a login and use cookies with `apiCredentials`. `?recording=<id>` fetches the recording directly without waiting for the list. An API error is reported above the map.
+
+`tools/aar_api_server.py` is a reference implementation in plain Python 3: it serves a server's `aar` folder as `GET /api/recordings?limit=&offset=` (title, world and date from each file's header line, duration from its last records) and `GET /api/recordings/<file name>`, with an optional bearer token and CORS origin, and with `--viewer` it serves the viewer at `/` already pointed at the API:
+
+```sh
+python3 tools/aar_api_server.py /home/arma/arma3/server/aar --viewer viewer/aar-viewer.html --bind 0.0.0.0 --port 8080
+```
+
+It is a reference for the contract rather than a hardened server; put it behind a real web server with TLS before exposing it to the internet.
 
 The page is generated from `viewer/viewer.body.html` by `viewer/build.py`; pass a recording to embed it as the example that opens with the page. `viewer/sample.py` writes a made-up recording that uses every record type, for trying the viewer out.
 
