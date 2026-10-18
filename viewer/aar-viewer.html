@@ -627,7 +627,7 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
   // (ground, panel, ink, accent, west, east, font-display, ...): top-level ones apply in both light and
   // dark mode, "light" and "dark" hold per-mode ones, and "mode" fixes the mode instead of following the OS.
   function applyLook() {
-    document.title = conf.title || "AAR Viewer";
+    document.title = (rec ? missionTitle(rec.header) + " · " : "") + (conf.title || "AAR Viewer");
     $("title").textContent = conf.title;
     const logo = $("logo"), img = logo.querySelector("img"), src = conf.logo ? pageUrl(conf.logo) : "";
     logo.hidden = !src;
@@ -1961,11 +1961,14 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
     for (const o of rec.events) if (o.type === "treatment" && o.result === "done" && o.patient !== o.medic) { const a = of(o.medic, o.t); if (a) a.treated++; }
     return [...stats.values()].sort((a, b) => a.side.localeCompare(b.side) || b.k - a.k || a.name.localeCompare(b.name));
   }
+  // The mission's own name (briefing name, else loading-screen name), falling back to the PBO name.
+  function missionTitle(h) { return h.briefing_name || h.on_load_name || h.mission || "Unknown mission"; }
+  function worldTitle(h) { return h.world_name || h.world || "?"; }
   function renderMission() {
     const h = rec.header;
     const row = (k, v, num) => v === undefined || v === null || v === "" ? "" : "<dt>" + k + "</dt><dd" + (num ? ' class="num"' : "") + ">" + v + "</dd>";
     const pct = x => Math.round(+x * 100) + "%";
-    const title = h.briefing_name || h.on_load_name || h.mission || "Unknown mission";
+    const title = missionTitle(h);
     let html = '<div class="sec"><h3>Mission</h3><div style="font-family:var(--font-display);font-size:1.3rem;font-weight:600">' + esc(title) + "</div>" +
       (h.overview ? '<p class="overview">' + esc(h.overview) + "</p>" : "") + '<dl class="kv" style="margin-top:8px">' +
       row("File name", esc(h.mission), true) +
@@ -2127,7 +2130,7 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
     const started = h.started_utc ? new Date(h.started_utc) : null;
     $("meta").innerHTML =
       (rec.label ? '<span class="sample">' + esc(rec.label) + "</span>" : "") +
-      "<span><b>" + esc(h.mission || "Unknown mission") + "</b> on " + esc(h.world || "?") + "</span>" +
+      "<span><b>" + esc(missionTitle(h)) + "</b> on " + esc(worldTitle(h)) + "</span>" +
       (started && !isNaN(started) ? "<span>" + started.toISOString().slice(0, 16).replace("T", " ") + " UTC</span>" : "") +
       "<span>" + fmt(rec.duration) + "</span>" +
       "<span>" + rec.entities.size + " entities" + (players.size ? ", " + players.size + (players.size > 1 ? " players" : " player") : "") + "</span>" +
@@ -2152,6 +2155,7 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
       $("error").hidden = true;
       unitMode = r.orbat ? "orbat" : "groups"; $("unitmode").hidden = !r.orbat; setUnitMode(unitMode);
       dataType = null; dataLimit = 100; dataQuery = "";
+      document.title = missionTitle(r.header) + " · " + (conf.title || "AAR Viewer");
       renderMeta(); resize(); readColors(); fit(); feedKey = ""; renderFeed(true); renderRoster(true); renderCard(true);
       renderRadio(); renderChat(); renderMission(); renderServer(); renderData(); drawCharts();
       tlDirty = true;
@@ -2336,17 +2340,55 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
     // Recorder file names start with the UTC start time, so name order is newest first when reversed.
     return list.sort((a, b) => b.name.localeCompare(a.name));
   }
+  // The file name only carries the PBO name, so read each file's first line (the header) for the mission's
+  // own name. Only up to the first newline is downloaded; a few files at a time, once per file.
+  const recHeaders = new Map();   // url -> header object, or null when it could not be read
+  async function readHeader(url) {
+    const r = await fetch(url, { headers: { Range: "bytes=0-262143" } });
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    const reader = r.body.getReader(), dec = new TextDecoder();
+    let text = "";
+    try {
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (value) text += dec.decode(value, { stream: true });
+        const nl = text.indexOf("\n");
+        if (nl >= 0) { text = text.slice(0, nl); break; }
+        if (done || text.length > 1048576) break;
+      }
+    } finally { reader.cancel().catch(() => {}); }
+    const h = JSON.parse(text);
+    return h && h.type === "header" ? h : null;
+  }
+  let headerQueue = Promise.resolve();
+  function loadRecHeaders() {
+    const todo = recordings.filter(x => !recHeaders.has(x.url));
+    for (const x of todo) recHeaders.set(x.url, undefined);
+    headerQueue = headerQueue.then(async () => {
+      for (let i = 0; i < todo.length; i += 4) {
+        await Promise.all(todo.slice(i, i + 4).map(async x => {
+          try { recHeaders.set(x.url, await readHeader(x.url)); } catch (_) { recHeaders.set(x.url, null); }
+        }));
+        if (!$("reclist").hidden) {
+          const f = document.activeElement && document.activeElement.closest("#reclist button[data-i]");
+          renderRecList();
+          if (f) { const b = $("reclist").querySelector('button[data-i="' + f.dataset.i + '"]'); if (b) b.focus(); }
+        }
+      }
+    });
+  }
   function renderRecList() {
     $("reclist").innerHTML = recordings.map((x, i) => {
-      const p = parseRecName(x.name);
-      const title = p ? esc(p.mission) + " <span class=\"size\">on " + esc(p.world) + "</span>" : esc(x.name);
+      const p = parseRecName(x.name), h = recHeaders.get(x.url);
+      const title = h ? esc(missionTitle(h)) + ' <span class="size">on ' + esc(worldTitle(h)) + "</span>"
+        : p ? esc(p.mission) + ' <span class="size">on ' + esc(p.world) + "</span>" : esc(x.name);
       return '<li><button data-i="' + i + '"' + (x.url === current ? ' aria-current="true"' : "") + "><b>" + title + '</b><span class="size">' + fmtSize(x.size) + "</span>" +
         "<small>" + esc(p ? p.when : x.modified || "") + "</small></button></li>";
     }).join("");
   }
   function showRecList(open) {
     $("reclist").hidden = !open; $("recbtn").setAttribute("aria-expanded", String(open));
-    if (open) { renderRecList(); const b = $("reclist").querySelector("button"); if (b) b.focus(); }
+    if (open) { loadRecHeaders(); renderRecList(); const b = $("reclist").querySelector("button"); if (b) b.focus(); }
   }
   $("recbtn").onclick = () => showRecList($("reclist").hidden);
   $("reclist").onclick = e => {
