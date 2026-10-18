@@ -5,7 +5,7 @@
  * Mission settings in description.ext (all optional):
  *   class AAR { enabled = 1; interval = 1; keyframeInterval = 60; logProjectiles = 1; logHits = 1; logMarkers = 1;
  *               frameBudget = 2; spikeThreshold = 100; pauseWhenEmpty = 1; logAI = 1; enemyDetectedCooldown = 120; logRadio = 1;
- *               logChat = 1; };
+ *               logChat = 1; netInterval = 10; };
  */
 if (!isServer) exitWith {};
 aar_active = false;
@@ -29,6 +29,7 @@ aar_pauseWhenEmpty = (["pauseWhenEmpty", 1] call _setting) != 0;
 aar_logAI = (["logAI", 1] call _setting) != 0;  // AI group behaviour, enemies detected, fleeing
 aar_enemyDetectedCooldown = (["enemyDetectedCooldown", 120] call _setting) max 0;  // s before a group's same target is logged again
 aar_logChat = (["logChat", 1] call _setting) != 0;  // chat on every channel
+aar_netInterval = (["netInterval", 10] call _setting) max 0;  // s between net records; 0 = off
 aar_tmf = isClass (configFile >> "CfgPatches" >> "tmf_common");  // TMF ORBAT and loadouts
 aar_logRadio = (["logRadio", 1] call _setting) != 0 && {isClass (configFile >> "CfgPatches" >> "acre_main") || isClass (configFile >> "CfgPatches" >> "tfar_core")};
 // TMF's ACRE2 radio networks, when the mission uses them.
@@ -67,6 +68,7 @@ aar_aceMedical = isClass (configFile >> "CfgPatches" >> "ace_medical_status");
 aar_nextId = 1;
 aar_nextPid = 1;
 aar_lastSnapshot = -1e9;
+aar_lastNet = -1e9;
 aar_lastKeyframe = -1e9;
 aar_snap = [];          // snapshot in progress, see aar_fnc_snapshot
 aar_snapStats = [0, 0, 0];
@@ -91,6 +93,7 @@ aar_radioNetsPending = aar_tmfNets isNotEqualTo [];  // radio_nets is written on
     "started_utc", toJSON _startedUtc,
     "interval", aar_interval toFixed 2,
     "keyframe_interval", aar_keyframeInterval toFixed 2,
+    "net_interval", aar_netInterval toFixed 2,
     "multiplayer", toJSON isMultiplayer,
     // Mission metadata. Text from description.ext is localized when it is a $STR key.
     "briefing_name", toJSON briefingName,

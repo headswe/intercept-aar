@@ -54,6 +54,7 @@ class CfgFunctions {
             class chatReport {};
             class chatClient { headerType = -1; };  // sent to clients as code, so no function header
             class coverMap {};
+            class net {};
             class stop {};
         };
     };

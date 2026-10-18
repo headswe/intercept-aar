@@ -271,7 +271,7 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
     ["shots", "Shots", false],
   ];
   // Record types the parser files somewhere other than the event feed.
-  const NOT_EVENTS = new Set(["header", "entity", "snap", "deleted", "submunition", "proj_end", "orbat", "perf", "radio_tx_end", "radio_nets", "cover_map", "leader"]);
+  const NOT_EVENTS = new Set(["header", "entity", "snap", "deleted", "submunition", "proj_end", "orbat", "perf", "net", "radio_tx_end", "radio_nets", "cover_map", "leader"]);
 
   let rec = null;               // parsed recording
   let t = 0, playing = false, speed = 4;
@@ -314,7 +314,7 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
   }
   function parse(text, label) {
     const r = { header: {}, end: null, entities: new Map(), shots: new Map(), hits: [], kills: [], events: [], duration: 0, label,
-      counts: new Map(), raw: new Map(), orbat: null, perf: [], spikes: [], idle: [], markers: new Map(), coverMaps: new Map(), buildings: [], damage: [], groupInfo: new Map(), detections: [],
+      counts: new Map(), raw: new Map(), orbat: null, perf: [], net: [], owners: new Map(), spikes: [], idle: [], markers: new Map(), coverMaps: new Map(), buildings: [], damage: [], groupInfo: new Map(), detections: [],
       tx: [], chat: [], nets: null, groupShort: new Map(), groupIcon: new Map() };
     const openTx = new Map();   // "unit|radio id" -> transmission still going
     const closeTx = (k, time) => { const x = openTx.get(k); if (x) { x.t1 = time; openTx.delete(k); } };
@@ -385,6 +385,8 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
         case "orbat": r.orbat = o; break;
         case "leader": groupInfo(r, o.side, o.group).leaders.push([o.t, o.unit]); break;
         case "perf": r.perf.push(o); break;
+        case "net": r.net.push(o); break;
+        case "connected": if (o.owner !== undefined) r.owners.set(o.owner, o.name); r.events.push(o); break;
         case "perf_spike": r.spikes.push(o); r.events.push(o); break;
         case "idle": if (o.idle) r.idle.push([o.t, null]); else if (r.idle.length && r.idle.at(-1)[1] === null) r.idle.at(-1)[1] = o.t; r.events.push(o); break;
         case "building": r.buildings.push(o); r.events.push(o); break;
@@ -452,6 +454,8 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
     r.bounds = { x0, y0, x1, y1 };
     for (const i of r.idle) if (i[1] === null) i[1] = r.duration;
     r.perf.sort((a, b) => a.t - b.t);
+    r.net.sort((a, b) => a.t - b.t);
+    r.netRows = netRows(r);
     r.spikes.sort((a, b) => a.t - b.t);
     for (const m of r.markers.values()) m.states.sort((a, b) => a.t - b.t);
     for (const g of r.groupInfo.values()) g.leaders.sort((a, b) => a[0] - b[0]);
@@ -1762,13 +1766,53 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
     { title: "Units and entities", series: [["units", "Units"], ["entities", "Entities"]] },
     { title: "Projectiles in flight", series: [["projectiles", "Projectiles"]] },
     { title: "Recorder cost per snapshot (ms)", series: [["snap_ms", "Total"], ["snap_max_ms", "Worst frame"]] },
+    { title: "Client ping (ms)", src: "netRows", series: [["ping_avg", "Average"], ["ping_max", "Worst client"]] },
+    { title: "Client desync", src: "netRows", series: [["desync_avg", "Average"], ["desync_max", "Worst client"]] },
+    { title: "Client bandwidth estimate", src: "netRows", series: [["bw_avg", "Average"], ["bw_min", "Lowest client"]] },
+    { title: "Server UDP queues (bytes)", src: "netRows", series: [["udp_rx", "Waiting to be read"], ["udp_tx", "Waiting to be sent"]] },
+    { title: "Server UDP packets dropped", src: "netRows", series: [["udp_dropped", "Since the previous sample"]] },
   ];
+  // One row per net record with the clients summed up, for the charts. Clients are
+  // [owner, unit, ping, bandwidth, desync, headless]. udp_drops is cumulative, so it is turned
+  // into the drops since the previous record.
+  function netRows(r) {
+    let prevDrops = null;
+    return r.net.map(o => {
+      const c = Array.isArray(o.clients) ? o.clients : [], row = { t: o.t, clients: c.length };
+      if (c.length) {
+        const col = i => c.map(x => +x[i] || 0), avg = a => a.reduce((x, y) => x + y, 0) / a.length;
+        const ping = col(2), bw = col(3), ds = col(4);
+        Object.assign(row, { ping_avg: avg(ping), ping_max: Math.max(...ping), bw_avg: avg(bw), bw_min: Math.min(...bw), desync_avg: avg(ds), desync_max: Math.max(...ds) });
+      }
+      if (typeof o.udp_rx === "number") { row.udp_rx = o.udp_rx; row.udp_tx = o.udp_tx; }
+      if (typeof o.udp_drops === "number") { if (prevDrops !== null) row.udp_dropped = Math.max(0, o.udp_drops - prevDrops); prevDrops = o.udp_drops; }
+      return row;
+    });
+  }
+  // Per client over the whole recording: name, headless, samples, ping/desync average and worst, bandwidth average.
+  function netClients() {
+    const m = new Map();
+    for (const o of rec.net) for (const c of Array.isArray(o.clients) ? o.clients : []) {
+      const [owner, unit, ping, bw, ds, hc] = c;
+      let x = m.get(owner);
+      if (!x) { x = { owner, hc: !!hc, unit: 0, n: 0, ping: 0, pingMax: 0, ds: 0, dsMax: 0, dsT: o.t, bw: 0 }; m.set(owner, x); }
+      if (unit) x.unit = unit;
+      x.n++; x.ping += +ping || 0; x.bw += +bw || 0; x.ds += +ds || 0;
+      x.pingMax = Math.max(x.pingMax, +ping || 0);
+      if ((+ds || 0) > x.dsMax) { x.dsMax = +ds; x.dsT = o.t; }
+    }
+    return [...m.values()].map(x => {
+      const e = x.unit && rec.entities.get(x.unit);
+      x.name = rec.owners.get(x.owner) || (e ? nameAt(e, x.dsT) : "") || "Client " + x.owner;
+      return x;
+    }).sort((a, b) => b.dsMax - a.dsMax || b.pingMax - a.pingMax);
+  }
   let charts = [], chartHover = null;
   const niceMax = v => { if (!(v > 0)) return 1; const p = Math.pow(10, Math.floor(Math.log10(v))); return [1, 2, 2.5, 5, 10].map(m => m * p).find(m => m >= v); };
   function renderServer() {
     const P = rec.perf;
-    charts = CHARTS.filter(c => P.some(p => typeof p[c.series[0][0]] === "number")).map(c => ({ ...c, base: null }));
-    if (!P.length && !rec.spikes.length) { $("pane-server").innerHTML = '<div class="empty">This recording has no server performance records.</div>'; return; }
+    charts = CHARTS.filter(c => rec[c.src || "perf"].some(p => typeof p[c.series[0][0]] === "number")).map(c => ({ ...c, base: null }));
+    if (!P.length && !rec.spikes.length && !rec.net.length) { $("pane-server").innerHTML = '<div class="empty">This recording has no server performance records.</div>'; return; }
     const num = k => P.map(p => p[k]).filter(v => typeof v === "number");
     const fps = num("fps"), fmin = num("fps_min"), units = num("units"), cost = num("snap_ms");
     const avg = a => a.length ? a.reduce((x, y) => x + y, 0) / a.length : NaN;
@@ -1780,7 +1824,11 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
       tile(rec.spikes.length, "frame spikes") +
       tile(units.length ? Math.max(...units) : "–", "most units") +
       tile(cost.length ? avg(cost).toFixed(2) + " ms" : "–", "recorder per snapshot") +
-      tile(fmt(idle), "server empty") + "</div></div>";
+      tile(fmt(idle), "server empty") +
+      (rec.netRows.some(n => n.clients) ? tile(Math.round(Math.max(...rec.netRows.map(n => n.ping_max || 0))) + " ms", "highest client ping") +
+        tile(Math.round(Math.max(...rec.netRows.map(n => n.desync_max || 0))), "worst client desync") : "") +
+      (rec.netRows.some(n => n.udp_dropped !== undefined) ? tile(rec.netRows.reduce((x, n) => x + (n.udp_dropped || 0), 0), "UDP packets dropped") : "") +
+      "</div></div>";
     charts.forEach((c, i) => {
       html += '<div class="sec"><h3>' + esc(c.title) + '</h3><div class="chart">' +
         (c.series.length > 1 ? '<div class="key">' + c.series.map((s, j) => "<span><i" + (j ? ' class="dash"' : "") + "></i>" + esc(s[1]) + "</span>").join("") + "</div>" : "") +
@@ -1789,6 +1837,11 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
     if (rec.spikes.length) {
       html += '<div class="sec"><h3>Frame spikes</h3><table class="tbl"><tr><th>Time</th><th class="n">Frame</th><th class="n">Recorder</th><th class="n">FPS</th><th class="n">Units</th></tr>' +
         rec.spikes.map(k => '<tr data-type="" data-t="' + k.t + '"><td class="n" style="text-align:left">' + fmt(k.t) + '</td><td class="n">' + Math.round(k.frame_ms) + ' ms</td><td class="n">' + (k.recorder_ms !== undefined ? (+k.recorder_ms).toFixed(1) + " ms" : "–") + '</td><td class="n">' + (k.fps ?? "–") + '</td><td class="n">' + (k.units ?? "–") + "</td></tr>").join("") + "</table></div>";
+    }
+    const nc = rec.net.length ? netClients() : [];
+    if (nc.length) {
+      html += '<div class="sec"><h3>Clients</h3><table class="tbl"><tr><th>Client</th><th class="n" title="Average ping">Ping</th><th class="n" title="Highest ping">Worst</th><th class="n" title="Average desync">Desync</th><th class="n" title="Highest desync; click to jump there">Worst</th><th class="n" title="Average bandwidth estimate">Bandwidth</th></tr>' +
+        nc.map(x => '<tr data-type="" data-t="' + x.dsT + '"><td>' + esc(x.name) + (x.hc ? ' <span class="tag">HC</span>' : "") + '</td><td class="n">' + Math.round(x.ping / x.n) + '</td><td class="n">' + x.pingMax + '</td><td class="n">' + Math.round(x.ds / x.n) + '</td><td class="n">' + x.dsMax + '</td><td class="n">' + Math.round(x.bw / x.n) + "</td></tr>").join("") + "</table></div>";
     }
     $("pane-server").innerHTML = html;
     for (const c of charts) c.base = null;
@@ -1803,9 +1856,10 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
       const ctx = cv.getContext("2d"); ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
       const L = 34, R = 6, T = 6, B = 16, pw = w - L - R, ph = h - T - B, D = rec.duration || 1;
       const X = time => L + time / D * pw;
+      const S = rec[c.src || "perf"], ST = rec[(c.src || "perf") + "Times"], gapAfter = c.src ? 3 * (rec.header.net_interval || 10) : Math.max(3 * rec.interval, 5);
       if (!c.base) {
         ctx.clearRect(0, 0, w, h);
-        let mx = 0; for (const p of rec.perf) for (const [k] of c.series) if (typeof p[k] === "number") mx = Math.max(mx, p[k]);
+        let mx = 0; for (const p of S) for (const [k] of c.series) if (typeof p[k] === "number") mx = Math.max(mx, p[k]);
         c.max = niceMax(mx * 1.05);
         const Y = v => T + ph - v / c.max * ph;
         const font = getComputedStyle(document.body).getPropertyValue("--font-data");
@@ -1821,9 +1875,9 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
         c.series.forEach(([k], j) => {
           ctx.strokeStyle = j ? C["ink-soft"] : C.ink; ctx.lineWidth = 2; ctx.lineJoin = "round"; ctx.setLineDash(j ? [4, 3] : []);
           ctx.beginPath(); let prev = null;
-          for (const p of rec.perf) {
+          for (const p of S) {
             if (typeof p[k] !== "number") continue;
-            const gap = prev && p.t - prev.t > Math.max(3 * rec.interval, 5);
+            const gap = prev && p.t - prev.t > gapAfter;
             if (!prev || gap) ctx.moveTo(X(p.t), Y(p[k])); else ctx.lineTo(X(p.t), Y(p[k]));
             prev = p;
           }
@@ -1834,9 +1888,9 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
       } else ctx.putImageData(c.base, 0, 0);
       ctx.fillStyle = C.accent; ctx.fillRect(X(t) - 1, T, 2, ph);
       const tip = $("tip" + i);
-      if (chartHover && chartHover.i === i && rec.perf.length) {
+      if (chartHover && chartHover.i === i && S.length) {
         const time = Math.min(D, Math.max(0, (chartHover.x - L) / pw * D));
-        const j = Math.max(0, idx(rec.perfTimes, time)), p = rec.perf[j];
+        const j = Math.max(0, idx(ST, time)), p = S[j];
         ctx.strokeStyle = C["ink-soft"]; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(Math.round(X(p.t)) + .5, T); ctx.lineTo(Math.round(X(p.t)) + .5, T + ph); ctx.stroke();
         for (const [k] of c.series) if (typeof p[k] === "number") { ctx.fillStyle = C.ink; ctx.beginPath(); ctx.arc(X(p.t), T + ph - p[k] / c.max * ph, 4, 0, Math.PI * 2); ctx.fill(); ctx.strokeStyle = C.panel; ctx.lineWidth = 2; ctx.stroke(); }
         tip.innerHTML = fmt(p.t) + " · " + c.series.filter(([k]) => typeof p[k] === "number").map(([k, n]) => esc(n) + " " + (+p[k].toFixed(2))).join(" · ");
@@ -1899,6 +1953,7 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
       r.eventTimes = r.events.map(e => [e.t]);
       r.chatTimes = r.chat.map(o => [o.t]);
       r.perfTimes = r.perf.map(p => [p.t]);
+      r.netRowsTimes = r.netRows.map(p => [p.t]);
       const world = String(r.header.world || "").toLowerCase();
       loadTerrain(world, +r.header.world_size || WORLD_SIZES[world] || 0);
       $("samplebtn").hidden = true;   // only offered while nothing is loaded; keeps the header on one line

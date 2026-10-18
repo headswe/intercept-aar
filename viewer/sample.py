@@ -25,7 +25,7 @@ KEY = 60
 X0, Y0 = 3600.0, 5500.0            # BLUFOR start, in the hills south-east of the village
 VX, VY = 3000.0, 6000.0            # village centre (Agia Marina, Stratis)
 
-rec(0, "header", version=1, mission="co12_village_raid", world="Stratis",
+rec(0, "header", version=1, net_interval=10, mission="co12_village_raid", world="Stratis",
     started_utc="2026-10-13T19:00:00Z", interval=INTERVAL, keyframe_interval=KEY, multiplayer=True,
     briefing_name="CO12 Village Raid", on_load_name="Village Raid", author="Sample Author",
     overview="Clear Agia Marina and hold it until the convoy arrives.",
@@ -312,6 +312,20 @@ for t10 in range(10, DURATION * 10):
         if not idle:
             ev(t, "perf", fps=fps, fps_min=round(fps - rnd.uniform(2, 9), 1), units=sum(1 for u in units.values() if u["alive"]), entities=len(units),
                projectiles=rnd.randint(2, 14) if fight else 0, snap_frames=1 + (len(units) > 30), snap_ms=round(rnd.uniform(0.4, 1.3), 2), snap_max_ms=round(rnd.uniform(0.4, 1.1), 2), batch=100)
+# net: every 10 s, engine stats per client plus the server's UDP queues; one player lags in the fight
+drops = 0
+for t in range(10, 405, 10):
+    fight = 120 <= t <= 300
+    clients = []
+    for pid in players:
+        if t < 2 + pid:
+            continue
+        lag = pid == 2 and 230 <= t <= 260
+        clients.append([2 + pid, pid, rnd.randint(40, 70) + (180 if lag else 0), rnd.randint(380, 520) - (300 if lag else 0),
+                        rnd.randint(0, 40) + (1800 if lag else 0) + (60 if fight else 0), False])
+    clients.append([20, 0, rnd.randint(5, 15), rnd.randint(800, 1200), rnd.randint(0, 20), True])
+    drops += rnd.randint(3, 12) if 238 <= t <= 242 else 0
+    ev(t, "net", clients=clients, udp_rx=rnd.randint(0, 3000) + (40000 if 238 <= t <= 242 else 0), udp_tx=rnd.randint(0, 800), udp_drops=drops)
 for t, ms in ((239.4, 212.5), (240.1, 145.0), (88.2, 118.3)):
     ev(t, "perf_spike", frame_ms=ms, recorder_ms=round(ms * 0.01, 2), fps=round(1000 / ms, 1), units=25, entities=28)
 ev(405, "idle", idle=True)

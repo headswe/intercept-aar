@@ -46,7 +46,7 @@ Every line is a JSON object with `type` and `t` (mission time in seconds, from `
 
 | type | fields |
 |---|---|
-| `header` | `version`, `mission`, `world`, `started_utc`, `interval`, `keyframe_interval`, `multiplayer`. Mission metadata: `briefing_name`, `on_load_name`, `author`, `overview` (from description.ext), `game_type`, `max_players` (from its `Header` class), `server_name`, `world_name` (display name), `world_size` (m), `date` (in-game start `[year, month, day, hour, minute]`), `time_multiplier`, `weather` (`[overcast, fog, rain]` at start), `game_version` (`[version, build]`), `mods` (loaded non-official mod folders) |
+| `header` | `version`, `mission`, `world`, `started_utc`, `interval`, `keyframe_interval`, `net_interval`, `multiplayer`. Mission metadata: `briefing_name`, `on_load_name`, `author`, `overview` (from description.ext), `game_type`, `max_players` (from its `Header` class), `server_name`, `world_name` (display name), `world_size` (m), `date` (in-game start `[year, month, day, hour, minute]`), `time_multiplier`, `weather` (`[overcast, fog, rain]` at start), `game_version` (`[version, build]`), `mods` (loaded non-official mod folders) |
 | `entity` | first sighting of an entity: `id`, `kind` (`unit`, `car`, `tank`, `heli`, `plane`, `ship`, `static`, `vehicle`, `air`), `class`, `display`, `side`, `faction` (class) and `faction_name`, `icon` (the class's map icon, a `CfgVehicleIcons` class such as `iconManMG`) and `icon_path` (its texture), `var_name` (editor variable name, when set); units also have `name`, `group`, `player`, `uid`, and `role_desc` (the slot description from the editor, e.g. `Rifleman@Alpha 1-1`) on playable units. With TMF: `orbat`, plus `group_short`, `group_icon`, `group_size`, `loadout_faction`, `role`, `role_name` (and `radio_net`, `radio_channels` with TMF radio networks) on units and `callsign`, `orbat_team` on vehicles (see "TMF" below) |
 | `snap` | `key` (true for a full keyframe), `e`: array of `[id, x, y, z, dir, alive, damage, vehicle_id]` |
 | `killed` | `victim`, `killer`, `instigator`, `pos`, `credit` (`engine`, `ace` or `last_hit`, see "Kills and ACE medical" below), and when someone other than the victim is credited `weapon` and `weapon_name` (from the last hit by them) and `distance` (m, from where the shot was fired to where it hit, or between the two at death); `cause` with ACE medical (e.g. `#bleedout`) |
@@ -80,6 +80,7 @@ Every line is a JSON object with `type` and `t` (mission time in seconds, from `
 | `building` | a building or wall changed model, usually destroyed: `from`, `to` (classes), `ruin`, `pos` |
 | `end` | `reason`, `entities` |
 | `perf` | once per snapshot: server `fps`, `fps_min`, `units`, `entities`, `projectiles` in flight, and the recorder's own snapshot cost: `snap_frames` (frames it was spread over), `snap_ms` (total), `snap_max_ms` (worst frame), `batch` (entities per frame) |
+| `net` | every `netInterval` seconds in multiplayer (not while the server is empty): `clients`, one `[owner, unit, ping, bandwidth, desync, headless]` per connected player and headless client, from the engine's `getUserInfo` network info (`ping` in ms; `bandwidth` and `desync` as the engine reports them in `#userlist`), `unit` the client's player unit (0 for none). On Linux also the operating system's queues for the server's UDP sockets: `udp_rx` (bytes received but not yet read by the game), `udp_tx` (bytes waiting to be sent) and `udp_drops` (packets dropped because the receive buffer was full, counted since the server started). See "Network" below |
 | `idle` | `idle`: true when a dedicated server has no players left and snapshots stop, false when someone joins again |
 | `perf_spike` | a server frame took longer than `spikeThreshold`: `frame_ms`, `recorder_ms` (the recorder's frame handler in that frame: snapshot and writing, not its event handlers), `fps`, `units`, `players`, `entities`, `projectiles` (in flight) |
 
@@ -112,7 +113,7 @@ Served from a web server, the viewer also looks for an `aar/` folder next to the
 - **Chat:** every message in the event feed with its channel, a pink tick per message on the timeline, what a unit typed shown next to it on the map for a few seconds, and a Chat tab listing all messages with a checkbox per channel (click one to jump to it).
 - **Units:** the TMF ORBAT tree when the recording has one, with each node's units and who is still alive; otherwise units by side and group.
 - **Mission:** everything in the header (mission, author, briefing, world, in-game date, weather, game version, mods), how the mission ended, and per-player stats.
-- **Server:** server FPS, minimum FPS, units, entities and projectiles in flight over the mission from the `perf` records, the recorder's own cost, and a list of frame spikes.
+- **Server:** server FPS, minimum FPS, units, entities and projectiles in flight over the mission from the `perf` records, the recorder's own cost, and a list of frame spikes. From the `net` records: client ping, desync and bandwidth (average and worst client), the server's UDP queues and dropped packets, and a table of clients by their worst desync (click one to jump to it).
 - **Data:** a count of every record type in the file and the raw records of any type, so a field the viewer does not draw is still readable.
 
 The page is generated from `viewer/viewer.body.html` by `viewer/build.py`; pass a recording to embed it as the example that opens with the page. `viewer/sample.py` writes a made-up recording that uses every record type, for trying the viewer out.
@@ -136,6 +137,7 @@ class AAR {
     enemyDetectedCooldown = 120; // seconds before a group re-detecting the same target is logged again; 0 = every time
     logRadio = 1;           // radio_tx / radios / radio_nets with ACRE2 or TFAR
     logChat = 1;            // chat records: what players type on every channel, plus system and script messages the server sees
+    netInterval = 10;       // seconds between net records (client ping, desync, bandwidth; server UDP queues); 0 = off
 };
 ```
 
@@ -214,3 +216,8 @@ Before settling on this design we read OCAP2, R3 and Anrop's AAR addon. This one
 - Needs Arma 3 2.18 or newer (`toJSON`, `ProjectileCreated` and the projectile event handlers).
 - If a mission ends without `Ended` or `MPEnded` firing (for example leaving the editor preview), the file has no `end` line; the next mission closes it.
 - Not tested in-game yet.
+
+## Network
+
+The engine has no script command for its own message queues (the guaranteed and non-guaranteed counts `#monitor` prints). The `net` record takes what the server can read without asking clients for anything: per client, the ping, bandwidth estimate and desync that `getUserInfo` reports (the same numbers as `#userlist`; desync grows when messages to that client back up), and on Linux the kernel's queues for the server's UDP sockets, read from `/proc` by the extension. A growing `udp_rx` or any `udp_drops` means the server is not reading packets as fast as they arrive, usually because its frames are slow; high desync for one client with a clean server queue points at that client's connection.
+

@@ -5,6 +5,8 @@
 //   "arma_aar" callExtension ["write", [records]]                 -> appends records (see sqf_json.hpp); returns the
 //                                                                    microseconds since "tick", if one is pending
 //   "arma_aar" callExtension ["close", []]
+//   "arma_aar" callExtension "netq"                               -> ["rx_queue","tx_queue","drops"] summed over the game's
+//                                                                    UDP sockets (Linux only, "" elsewhere)
 //   "arma_aar" callExtension "version"
 //
 // All calls come from the game thread; the file is written on a background thread.
@@ -14,7 +16,10 @@
 #include <cstring>
 #include <ctime>
 #include <filesystem>
+#include <fstream>
+#include <sstream>
 #include <string>
+#include <unordered_set>
 #include <string_view>
 
 #include "async_writer.hpp"
@@ -112,6 +117,49 @@ int open_file(char* output, unsigned int size, const char** argv, unsigned int a
     return ok;
 }
 
+// The operating system's queues for the game's own UDP sockets: bytes received but not yet read by
+// the game, bytes waiting to be sent, and datagrams dropped because the receive buffer was full
+// (cumulative). Read from /proc, so Linux only. Sockets are matched by inode against this
+// process's open file descriptors, so other processes on the host are left out.
+std::string udp_queues() {
+#ifdef __linux__
+    namespace fs = std::filesystem;
+    std::unordered_set<unsigned long> inodes;
+    std::error_code ec;
+    for (fs::directory_iterator it("/proc/self/fd", ec), end; !ec && it != end; it.increment(ec)) {
+        std::string target = fs::read_symlink(it->path(), ec).string();
+        if (ec) { ec.clear(); continue; }
+        if (target.rfind("socket:[", 0) == 0) inodes.insert(std::strtoul(target.c_str() + 8, nullptr, 10));
+    }
+    unsigned long long rx = 0, tx = 0, drops = 0;
+    int sockets = 0;
+    for (const char* table : {"/proc/self/net/udp", "/proc/self/net/udp6"}) {
+        std::ifstream in(table);
+        std::string line;
+        std::getline(in, line);  // header
+        while (std::getline(in, line)) {
+            // sl local rem st tx_queue:rx_queue tr:when retrnsmt uid timeout inode ref pointer drops
+            std::istringstream f(line);
+            std::string col[13];
+            int n = 0;
+            while (n < 13 && f >> col[n]) ++n;
+            if (n < 13 || !inodes.count(std::strtoul(col[9].c_str(), nullptr, 10))) continue;
+            auto colon = col[4].find(':');
+            if (colon == std::string::npos) continue;
+            tx += std::strtoull(col[4].substr(0, colon).c_str(), nullptr, 16);
+            rx += std::strtoull(col[4].substr(colon + 1).c_str(), nullptr, 16);
+            drops += std::strtoull(col[12].c_str(), nullptr, 10);
+            ++sockets;
+        }
+    }
+    if (sockets == 0) return "";
+    // Strings, since SQF would print counts over a million in scientific notation.
+    return "[\"" + std::to_string(rx) + "\",\"" + std::to_string(tx) + "\",\"" + std::to_string(drops) + "\"]";
+#else
+    return "";
+#endif
+}
+
 }  // namespace
 
 void AAR_CALL RVExtensionVersion(char* output, unsigned int output_size) { set_output(output, output_size, AAR_VERSION); }
@@ -122,6 +170,10 @@ void AAR_CALL RVExtension(char* output, unsigned int output_size, const char* fu
         tick_time = std::chrono::steady_clock::now();
         tick_pending = true;
         set_output(output, output_size, "");
+        return;
+    }
+    if (fn == "netq") {
+        set_output(output, output_size, udp_queues());
         return;
     }
     set_output(output, output_size, fn == "version" ? AAR_VERSION : "");
