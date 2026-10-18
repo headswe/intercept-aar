@@ -2,7 +2,8 @@
  * postInit: opens the recording and adds the event handlers. Server only; in singleplayer
  * or a hosted game the host records.
  *
- * Mission settings in description.ext (all optional):
+ * Settings come from CBA (Options > Addon Options > AAR, see aar_fnc_settings). A mission can
+ * override any of them in description.ext (all optional):
  *   class AAR { enabled = 1; interval = 1; keyframeInterval = 60; logProjectiles = 1; logHits = 1; logMarkers = 1;
  *               frameBudget = 2; spikeThreshold = 100; pauseWhenEmpty = 1; logAI = 1; enemyDetectedCooldown = 120; logRadio = 1;
  *               logChat = 1; };
@@ -14,9 +15,11 @@ private _cfg = missionConfigFile >> "AAR";
 private _setting = {
     params ["_key", "_default"];
     private _entry = _cfg >> _key;
-    if (isNumber _entry) then { getNumber _entry } else { _default }
+    if (isNumber _entry) exitWith { getNumber _entry };
+    private _value = missionNamespace getVariable ["aar_setting_" + _key, _default];
+    if (_value isEqualType true) then { [0, 1] select _value } else { _value }
 };
-if ((["enabled", 1] call _setting) == 0) exitWith { diag_log "[AAR] disabled by mission config" };
+if ((["enabled", 1] call _setting) == 0) exitWith { diag_log "[AAR] disabled by settings" };
 
 aar_interval = (["interval", 1] call _setting) max 0.1;
 aar_keyframeInterval = (["keyframeInterval", 60] call _setting) max aar_interval;

@@ -18,7 +18,7 @@ Every build on GitHub Actions uploads an `@arma_aar` artifact, the finished mod 
 1. Start the server with it: `arma3server_x64.exe -serverMod=@arma_aar ...`. For a local test in the editor or singleplayer use `-mod=@arma_aar` on the game instead.
 2. Play a mission. The RPT log shows `[AAR] recording to ...` and the file appears under `aar\` in the Arma folder.
 
-Only the server records; clients do not need the mod. In singleplayer or a hosted game the host records.
+Requires [CBA_A3](https://github.com/CBATeam/CBA_A3) on the server (TMF needs it anyway). Only the server records; clients do not need the mod. In singleplayer or a hosted game the host records.
 
 **BattlEye:** with BattlEye on, Arma only loads extensions BattlEye has whitelisted, and this one is not. Run without BattlEye (no `-beservice`, or `BattlEye = 0;` in server.cfg) until it is. If the extension does not load, the RPT says `[AAR] arma_aar extension did not load`.
 
@@ -117,9 +117,16 @@ Served from a web server, the viewer also looks for an `aar/` folder next to the
 
 The page is generated from `viewer/viewer.body.html` by `viewer/build.py`; pass a recording to embed it as the example that opens with the page. `viewer/sample.py` writes a made-up recording that uses every record type, for trying the viewer out.
 
-## Mission settings
+## Settings
 
-Add this to a mission's `description.ext` to change the defaults (all optional).
+The recorder's options are CBA settings, under **AAR** in Options > Addon Options (Recording, Events, Performance). They are server settings: set them for every mission in the server's `userconfig\cba_settings.sqf` (or from the in-game menu as a logged-in admin with the mod loaded), or for one mission in the Eden editor's Addon Options, which CBA saves in the mission. They are read when the mission starts, so a change applies to the next mission. Each one is the variable `aar_setting_<key>`, for example:
+
+```
+force aar_setting_enemyDetectedCooldown = 60;
+aar_setting_logChat = false;
+```
+
+A mission can also override any setting in its `description.ext` (all optional). A key here wins over the CBA setting.
 
 ```
 class AAR {
