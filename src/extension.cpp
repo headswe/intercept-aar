@@ -179,6 +179,11 @@ int gamedata(std::string_view fn, char* output, unsigned int size, const char** 
             fs::path p(m);
             j.search.push_back(p.is_absolute() ? p : game / p);
         }
+        for (const std::string& extra : aar::gamedata::json_strings(arg(3))) {
+            if (extra.empty()) continue;
+            fs::path p(extra);
+            j.search.push_back(p.is_absolute() ? p : game / p);
+        }
         gd_busy = true;
         std::thread([j = std::move(j)]() {
             std::string result;

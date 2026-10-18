@@ -388,7 +388,11 @@ def main(argv=None):
         cfg = json.loads(Path(args.cfg).read_text(encoding="utf-8"))
         if cfg.get("format") != "aar-cfg":
             sys.exit(f"{args.cfg} is not an export from export_cfg.sqf")
-        wanted |= {norm(p) for p in cfg.get("vehicle_icons", {}).values() if p}
+        wanted |= {norm(p) for table in ("vehicle_icons", "marker_icons") for p in cfg.get(table, {}).values() if p}
+        for row in cfg.get("vehicles", {}).values():
+            if (isinstance(row, (list, tuple)) and len(row) > 2 and isinstance(row[2], str)
+                    and ("\\" in row[2] or "/" in row[2])):
+                wanted.add(norm(row[2]))
         for table in ("vehicles", "weapons"):
             for cls, row in cfg.get(table, {}).items():
                 if len(row) > 1 and row[1] and (args.all_pictures or cls.lower() in classes):

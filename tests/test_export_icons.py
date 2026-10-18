@@ -106,18 +106,30 @@ class Export(unittest.TestCase):
             (d / "game" / "Addons").mkdir(parents=True)
             (d / "game" / "Addons" / "ui.pbo").write_bytes(pbo("a3\\ui_f", [
                 ("data\\map\\vehicleicons\\iconMan_ca.paa", icon),
+                ("data\\map\\markers\\nato\\b_inf.paa", icon),
                 ("data\\other.paa", icon),
                 ("config.bin", b"x" * 10)]))
+            (d / "game" / "Addons" / "mod.pbo").write_bytes(pbo("my_mod", [
+                ("icons\\custom_ca.paa", icon)]))
             rec = d / "rec.jsonl"
             rec.write_text(json.dumps({"type": "entity", "class": "B_Soldier_F", "icon_path": "\\A3\\ui_f\\data\\other.paa"}) + "\n")
             cfg = d / "aar-cfg.json"
-            cfg.write_text(json.dumps({"format": "aar-cfg", "vehicles": {"B_Soldier_F": ["Rifleman", "", "iconMan", "BLU_F"]},
-                                       "vehicle_icons": {"iconMan": "\\A3\\ui_f\\data\\map\\VehicleIcons\\iconMan_ca"}}))
+            cfg.write_text(json.dumps({"format": "aar-cfg", "vehicles": {
+                                           "B_Soldier_F": ["Rifleman", "", "iconMan", "BLU_F"],
+                                           "Mod_Soldier_F": ["Mod soldier", "", "\\my_mod\\icons\\custom_ca.paa", ""],
+                                       },
+                                       "vehicle_icons": {"iconMan": "\\A3\\ui_f\\data\\map\\VehicleIcons\\iconMan_ca"},
+                                       "marker_icons": {"mil_inf": "\\A3\\ui_f\\data\\map\\markers\\nato\\b_inf"}}))
             out = d / "aar-icons.json"
             E.main([str(d / "game"), "-c", str(cfg), "-r", str(rec), "-o", str(out)])
             pack = json.loads(out.read_text())
             self.assertEqual(pack["format"], "aar-icons")
-            self.assertEqual(set(pack["icons"]), {"a3\\ui_f\\data\\map\\vehicleicons\\iconman_ca.paa", "a3\\ui_f\\data\\other.paa"})
+            self.assertEqual(set(pack["icons"]), {
+                "a3\\ui_f\\data\\map\\vehicleicons\\iconman_ca.paa",
+                "a3\\ui_f\\data\\map\\markers\\nato\\b_inf.paa",
+                "a3\\ui_f\\data\\other.paa",
+                "my_mod\\icons\\custom_ca.paa",
+            })
             w, h, rgba = decode_png(base64.b64decode(pack["icons"]["a3\\ui_f\\data\\other.paa"].split(",", 1)[1]))
             self.assertEqual((w, h, rgba[:4]), (4, 4, bytes((255, 255, 255, 255))))
 

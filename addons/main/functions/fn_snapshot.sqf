@@ -55,9 +55,11 @@ for "_i" from _index to _end - 1 do {
                 };
                 if (aar_tmf) then {
                     // TMF gives players their gear after the unit is first seen, and respawns can change it.
+                    private _faction = _obj getVariable ["tmf_assigngear_faction", ""];
                     private _role = _obj getVariable ["tmf_assigngear_role", ""];
-                    if (_role isNotEqualTo (_entry select 6)) then {
-                        _entry set [6, _role];
+                    private _loadout = [_faction, _role];
+                    if (_role isNotEqualTo "" && {_loadout isNotEqualTo (_entry select 6)}) then {
+                        _entry set [6, _loadout];
                         ["loadout", ["unit", toJSON _id] + (_obj call aar_fnc_tmfLoadout)] call aar_fnc_rec;
                     };
                 };

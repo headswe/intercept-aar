@@ -33,8 +33,9 @@ private _class = typeOf _obj;
 private _side = str side _obj;
 private _group = if (_isUnit && {!isNull group _obj}) then { groupId group _obj } else { "" };
 private _uid = if (isPlayer _obj) then { getPlayerUID _obj } else { "" };
-// [object, kind, group, side, uid, last snapshot state, TMF role]
-aar_entities set [_id, [_obj, _kind, _group, _side, _uid, [], _obj getVariable ["tmf_assigngear_role", ""]]];
+// [object, kind, group, side, uid, last snapshot state, [TMF faction, role]]
+aar_entities set [_id, [_obj, _kind, _group, _side, _uid, [],
+    [_obj getVariable ["tmf_assigngear_faction", ""], _obj getVariable ["tmf_assigngear_role", ""]]]];
 
 private _cfg = configFile >> "CfgVehicles" >> _class;
 private _faction = faction _obj;
