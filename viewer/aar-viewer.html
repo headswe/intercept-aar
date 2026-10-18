@@ -56,6 +56,8 @@ button { cursor: pointer; }
 
 .app { height: 100%; display: grid; grid-template-rows: auto 1fr auto; padding-inline: 16px; }
 header { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 18px; padding-block: 12px 10px; border-bottom: 1px solid var(--rule); }
+.logo { align-self: center; display: flex; }
+.logo img { display: block; height: 28px; max-width: 160px; object-fit: contain; }
 h1 { font-family: var(--font-display); font-weight: 700; font-size: 1.5rem; letter-spacing: .02em; margin: 0; text-transform: uppercase; }
 .meta { display: flex; flex-wrap: wrap; gap: 4px 16px; color: var(--ink-soft); font-family: var(--font-data); font-size: 12px; min-width: 0; }
 .meta b { color: var(--ink); font-weight: 500; }
@@ -193,7 +195,8 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
 
 <div class="app">
   <header>
-    <h1>AAR Viewer</h1>
+    <a class="logo" id="logo" hidden><img alt=""></a>
+    <h1 id="title">AAR Viewer</h1>
     <div class="meta" id="meta"></div>
     <div class="load">
       <span class="error" id="error" hidden></span>
@@ -574,15 +577,22 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
     icons: ["aar-icons.json", "aar/aar-icons.json"], // texture list; the first that loads is used
     iconUrl: "",                                  // texture not in the list: base URL or template with {path}
     recordings: "aar/",                           // folder with index.json or a directory listing
+    title: "AAR Viewer",                          // header and tab title
+    logo: "",                                     // image shown before the title
+    logoLink: "",                                 // where clicking the logo goes
+    css: [],                                      // extra stylesheets (fonts, anything else)
+    theme: {},                                    // CSS variables: {"accent": "#c00", "light": {...}, "dark": {...}, "mode": "dark"}
   };
   const confKeys = Object.keys(conf), confDefaults = { ...conf };
-  const listy = k => k === "cfg" || k === "icons";
+  const listy = k => k === "cfg" || k === "icons" || k === "css";
+  const objy = k => k === "aliases" || k === "terrains" || k === "theme";
   function applyConf(o, from) {
     if (!o || typeof o !== "object" || Array.isArray(o)) throw new Error(from + " is not a JSON object");
     for (const k of confKeys) {
       if (!(k in o)) continue;
       const v = o[k];
-      if (k === "aliases" || k === "terrains") conf[k] = { ...conf[k], ...Object.fromEntries(Object.entries(v || {}).map(([a, b]) => [lc(a), b])) };
+      if (k === "theme") conf.theme = { ...conf.theme, ...v, light: { ...conf.theme.light, ...(v || {}).light }, dark: { ...conf.theme.dark, ...(v || {}).dark } };
+      else if (objy(k)) conf[k] = { ...conf[k], ...Object.fromEntries(Object.entries(v || {}).map(([a, b]) => [lc(a), b])) };
       else if (listy(k)) conf[k] = (Array.isArray(v) ? v : v ? [v] : []).map(String);
       else conf[k] = v == null ? "" : String(v);
     }
@@ -595,6 +605,7 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
     const problems = [];
     try { const el = document.getElementById("viewer-config"); if (el) applyConf(JSON.parse(el.textContent), "the embedded viewer config"); }
     catch (err) { problems.push(err.message); }
+    applyLook();
     const named = confParams.get("config"), file = pageUrl(named || "viewer-config.json");
     if (fetchable(file)) try {
       const r = await fetch(file, { cache: "no-cache" });
@@ -604,12 +615,41 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
     // ?tiles=, ?tileUrl=, ?cfg=, ... ; aliases and terrains take JSON.
     for (const k of confKeys) if (confParams.has(k)) try {
       const v = confParams.get(k);
-      applyConf({ [k]: k === "aliases" || k === "terrains" ? JSON.parse(v) : v }, "?" + k);
+      applyConf({ [k]: objy(k) ? JSON.parse(v) : v }, "?" + k);
     } catch (err) { problems.push("?" + k + ": " + err.message); }
     if (conf.tiles && !conf.tiles.endsWith("/")) conf.tiles += "/";
+    applyLook();
     if (problems.length) { $("error").textContent = "Viewer config: " + problems.join("; "); $("error").hidden = false; }
     return conf;
   })();
+
+  // Logo, title and theme. Theme keys are the CSS variables at the top of the page without "--"
+  // (ground, panel, ink, accent, west, east, font-display, ...): top-level ones apply in both light and
+  // dark mode, "light" and "dark" hold per-mode ones, and "mode" fixes the mode instead of following the OS.
+  function applyLook() {
+    document.title = conf.title || "AAR Viewer";
+    $("title").textContent = conf.title;
+    const logo = $("logo"), img = logo.querySelector("img"), src = conf.logo ? pageUrl(conf.logo) : "";
+    logo.hidden = !src;
+    if (src && img.getAttribute("src") !== src) { img.src = src; img.alt = conf.title || "Logo"; }
+    if (conf.logoLink) logo.href = pageUrl(conf.logoLink); else logo.removeAttribute("href");
+    for (const href of conf.css.map(pageUrl)) {
+      if (!href || [...document.querySelectorAll("link[data-conf]")].some(l => l.href === href)) continue;
+      const l = document.createElement("link"); l.rel = "stylesheet"; l.href = href; l.dataset.conf = ""; document.body.appendChild(l);
+    }
+    const th = conf.theme || {};
+    const vars = o => Object.entries(o || {}).filter(([k, v]) => /^[a-z][a-z0-9-]*$/i.test(k) && (typeof v === "string" || typeof v === "number") && !/[;{}<>]/.test(String(v)))
+      .map(([k, v]) => "--" + k + ": " + v + ";").join(" ");
+    const both = vars(Object.fromEntries(Object.entries(th).filter(([k]) => !["light", "dark", "mode"].includes(k))));
+    const dark = both + " " + vars(th.dark);
+    let st = $("theme-conf");
+    // In the body, after the page's own style block (which build.py also puts in the body), so it wins.
+    if (!st) { st = document.createElement("style"); st.id = "theme-conf"; document.body.appendChild(st); }
+    st.textContent = ":root { " + both + " " + vars(th.light) + " }\n" +
+      "@media (prefers-color-scheme: dark) { :root:not([data-theme=\"light\"]) { " + dark + " } }\n:root[data-theme=\"dark\"] { " + dark + " }";
+    if ((th.mode === "light" || th.mode === "dark") && !document.documentElement.dataset.theme) document.documentElement.dataset.theme = th.mode;
+    try { themeChanged(); } catch (_) {}   // not defined yet on the first, synchronous call
+  }
 
   // ---------- game data ----------
   // Names and textures come from the game rather than the recording: aar_fnc_gameData on the server
