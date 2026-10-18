@@ -85,6 +85,7 @@ main { display: grid; grid-template-columns: minmax(0, 1fr) 390px; gap: 0; min-h
 .card dt { color: var(--ink-soft); }
 .card dd { margin: 0; font-family: var(--font-data); font-variant-numeric: tabular-nums; min-width: 0; overflow-wrap: anywhere; }
 .card .row { display: flex; gap: 6px; }
+.card .delta { color: var(--accent); font-size: 11px; }
 
 aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: var(--panel); }
 .tabs { display: flex; border-bottom: 1px solid var(--rule); }
@@ -151,13 +152,20 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
 .raw time { font-family: var(--font-data); font-size: 12px; color: var(--accent); cursor: pointer; }
 .raw code { font-family: var(--font-data); font-size: 11px; overflow-wrap: anywhere; color: var(--ink-soft); }
 .search { width: 100%; font: inherit; font-size: 13px; padding: 5px 8px; border: 1px solid var(--rule); border-radius: 4px; background: var(--ground); color: var(--ink); }
-.transport { display: grid; grid-template-columns: auto auto 1fr auto; gap: 12px; align-items: center; padding-block: 10px 12px; border-top: 1px solid var(--rule); }
+.transport { display: grid; grid-template-columns: auto auto auto 1fr auto; gap: 12px; align-items: center; padding-block: 10px 12px; border-top: 1px solid var(--rule); }
 .play { width: 40px; height: 40px; border-radius: 50%; border: 0; background: var(--ink); color: var(--ground); display: grid; place-items: center; }
 .clock { font-family: var(--font-data); font-variant-numeric: tabular-nums; font-size: 15px; }
 .clock span { color: var(--ink-soft); font-size: 12px; }
 .timeline { position: relative; height: 44px; min-width: 0; }
 .timeline canvas { width: 100%; height: 100%; display: block; cursor: pointer; }
 .speed { display: flex; gap: 2px; }
+.share { position: relative; display: flex; gap: 6px; }
+.share .btn { font-family: var(--font-data); font-size: 12px; padding: 4px 8px; white-space: nowrap; }
+.sharepop { position: absolute; left: 0; bottom: calc(100% + 8px); z-index: 9; width: min(340px, calc(100vw - 32px)); background: var(--panel); border: 1px solid var(--rule); border-radius: 4px; box-shadow: 0 6px 20px rgba(0,0,0,.18); padding: 10px 12px; font-size: 13px; display: grid; gap: 8px; }
+.sharepop .line { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.sharepop input[type="text"] { width: 5.5em; font-family: var(--font-data); font-size: 12px; padding: 3px 5px; border: 1px solid var(--rule); border-radius: 3px; background: var(--ground); color: var(--ink); }
+.sharepop .note { color: var(--ink-soft); font-size: 12px; }
+.sharepop h3 { margin: 0; font-size: 12px; font-weight: 600; color: var(--ink-soft); text-transform: uppercase; letter-spacing: .04em; }
 .speed button { border: 1px solid var(--rule); background: var(--panel); padding: 4px 7px; font-family: var(--font-data); font-size: 12px; border-radius: 3px; }
 .speed button[aria-pressed="true"] { background: var(--ink); color: var(--ground); border-color: var(--ink); }
 
@@ -248,6 +256,11 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
       <svg width="16" height="16" viewBox="0 0 16 16" id="playicon"><path fill="currentColor" d="M3 1.5v13l11-6.5z"/></svg>
     </button>
     <div class="clock" id="clock">00:00 <span>/ 00:00</span></div>
+    <div class="share">
+      <button class="btn" id="clipchip" hidden aria-label="Stop playing the clip"></button>
+      <button class="btn" id="sharebtn" aria-haspopup="true" aria-expanded="false" hidden>Share</button>
+      <div class="sharepop" id="sharepop" hidden role="dialog" aria-label="Share"></div>
+    </div>
     <div class="timeline"><canvas id="tl" aria-label="Timeline"></canvas></div>
     <div class="speed" id="speed"></div>
   </div>
@@ -272,6 +285,7 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
 
   let rec = null;               // parsed recording
   let t = 0, playing = false, speed = 4;
+  let clip = null, playFrom = 0;  // clip: {a, b} in seconds, from a shared link or the Share panel
   let selected = 0, follow = false;
   let view = { cx: 0, cy: 0, scale: 1 };   // world centre and pixels per metre
   const filters = Object.fromEntries(FILTERS.map(f => [f[0], f[2]]));
@@ -1583,6 +1597,12 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
       tlBase = tctx.getImageData(0, 0, tl.width, tl.height);
       tlDirty = false;
     } else tctx.putImageData(tlBase, 0, 0);
+    if (rec && rec.duration > 0 && clip) {
+      tctx.fillStyle = C.ground; tctx.globalAlpha = .6;
+      tctx.fillRect(0, 0, clip.a / rec.duration * w, h); tctx.fillRect(clip.b / rec.duration * w, 0, w, h);
+      tctx.globalAlpha = 1; tctx.fillStyle = C.accent;
+      for (const v of [clip.a, clip.b]) tctx.fillRect(v / rec.duration * w - .5, 0, 1, h);
+    }
     if (rec && rec.duration > 0) {
       const x = t / rec.duration * w;
       tctx.fillStyle = C.accent; tctx.fillRect(x - 1, 0, 2, h);
@@ -1765,13 +1785,16 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
     const s = stateAt(e, t);
     const onAir = txAt(t).filter(x => x.unit === e.id).map(x => x.label).join();
     const down = !!(s && s.alive && downAt(e, t));
-    const key = selected + "|" + (s ? [Math.round(s.x), Math.round(s.y), s.alive, s.dmg, s.veh, down].join() : "x") + "|" + follow + "|" + onAir + "|" + idx(e.radios, t);
+    // Shots and kills so far, and how many of them came in the last DELTA_S seconds.
+    const shots = unitTally(e, "shots"), kills = unitTally(e, "kills");
+    const shotsBy = countTo(shots, t), killsBy = countTo(kills, t);
+    const dShots = shotsBy - countTo(shots, t - DELTA_S), dKills = killsBy - countTo(kills, t - DELTA_S);
+    const key = selected + "|" + (s ? [Math.round(s.x), Math.round(s.y), s.alive, s.dmg, s.veh, down].join() : "x") + "|" + follow + "|" + onAir + "|" + idx(e.radios, t) +
+      "|" + [shotsBy, killsBy, dShots, dKills].join();
     if (!force && key === cardKey) return;
     cardKey = key;
     const veh = s && s.veh ? rec.entities.get(s.veh) : null;
     const oid = orbatAt(e, t), node = oid !== undefined ? rec.nodes.get(oid) : null;
-    const killsBy = rec.kills.filter(k => k.t <= t && k.victim !== e.id && (k.instigator || k.killer) === e.id).length;
-    const shotsBy = rec.shotList.filter(x => x.t0 <= t && (x.gunner || x.shooter) === e.id).length;
     // Vehicle pictures are white silhouettes, so drawn in the ink colour to show on either theme.
     const pic = tinted(vehicleRow(e)[1], C.ink);
     let picUrl = ""; try { picUrl = pic ? pic.toDataURL() : ""; } catch (_) {}
@@ -1788,11 +1811,30 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
       (uidAt(e, t) ? "<dt>UID</dt><dd>" + esc(uidAt(e, t)) + "</dd>" : "") +
       (veh ? "<dt>Vehicle</dt><dd>" + esc(veh.display || vehicleRow(veh)[0] || veh.cls) + "</dd>" : "") +
       (s ? "<dt>Grid</dt><dd>" + grid(s.x, s.y) + " · " + Math.round(s.dir) + "°</dd>" : "") +
-      "<dt>Shots</dt><dd>" + shotsBy + "</dd><dt>Kills</dt><dd>" + killsBy + "</dd></dl>" +
+      "<dt>Shots</dt><dd>" + shotsBy + delta(dShots) + "</dd><dt>Kills</dt><dd>" + killsBy + delta(dKills) + "</dd></dl>" +
       '<div class="row"><button class="btn" id="follow" aria-pressed="' + follow + '">' + (follow ? "Stop following" : "Follow") + '</button><button class="btn" id="deselect">Close</button></div>';
     card.hidden = false;
     $("follow").onclick = () => { follow = !follow; renderCard(true); };
     $("deselect").onclick = () => select(0);
+  }
+  const DELTA_S = 10;
+  const delta = n => n > 0 ? ' <span class="delta" title="in the last ' + DELTA_S + ' s">+' + n + "</span>" : "";
+  // Sorted times of a unit's shots or kills, built once per unit.
+  function unitTally(e, kind) {
+    const cache = rec.tally || (rec.tally = { shots: new Map(), kills: new Map() });
+    if (!cache[kind].size) {
+      const add = (id, time) => { if (!cache[kind].has(id)) cache[kind].set(id, []); cache[kind].get(id).push(time); };
+      if (kind === "shots") for (const x of rec.shotList) add(x.gunner || x.shooter, x.t0);
+      else for (const k of rec.kills) if (k.victim !== (k.instigator || k.killer)) add(k.instigator || k.killer, k.t);
+      for (const a of cache[kind].values()) a.sort((x, y) => x - y);
+      cache[kind].set(undefined, []);   // marks the map built even when nobody fired
+    }
+    return cache[kind].get(e.id) || [];
+  }
+  function countTo(arr, time) {   // how many times are <= time
+    let lo = 0, hi = arr.length;
+    while (lo < hi) { const m = (lo + hi) >> 1; if (arr[m] <= time) lo = m + 1; else hi = m; }
+    return lo;
   }
   // Card rows for a unit's radios: TMF network and channels, the radios carried, and what it is saying on.
   function radioRows(e) {
@@ -2148,6 +2190,7 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
       loadTerrain(world, +r.header.world_size || WORLD_SIZES[world] || 0);
       $("samplebtn").hidden = true;   // only offered while nothing is loaded; keeps the header on one line
       rec = r; t = 0; selected = 0; follow = false; playing = false; setPlayIcon();
+      setClip(null); setLink(null); $("sharebtn").hidden = false; showShare(false);
       $("error").hidden = true;
       unitMode = r.orbat ? "orbat" : "groups"; $("unitmode").hidden = !r.orbat; setUnitMode(unitMode);
       dataType = null; dataLimit = 100; dataQuery = "";
@@ -2165,7 +2208,12 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
     $("playicon").innerHTML = playing ? '<path fill="currentColor" d="M3 2h3.5v12H3zM9.5 2H13v12H9.5z"/>' : '<path fill="currentColor" d="M3 1.5v13l11-6.5z"/>';
     $("play").setAttribute("aria-label", playing ? "Pause" : "Play");
   }
-  $("play").onclick = () => { if (!rec) return; if (t >= rec.duration) t = 0; playing = !playing; setPlayIcon(); };
+  $("play").onclick = () => {
+    if (!rec) return;
+    if (!playing && clip && (t >= clip.b || t < clip.a)) t = clip.a;
+    else if (t >= rec.duration) t = 0;
+    playing = !playing; playFrom = t; setPlayIcon();
+  };
   $("speed").innerHTML = SPEEDS.map(s => '<button data-s="' + s + '" aria-pressed="' + (s === speed) + '">' + s + "×</button>").join("");
   $("speed").onclick = e => { const b = e.target.closest("button"); if (!b) return; speed = +b.dataset.s; for (const x of $("speed").children) x.setAttribute("aria-pressed", +x.dataset.s === speed); };
   $("filters").innerHTML = FILTERS.map(f => '<label><input type="checkbox" id="f-' + f[0] + '"' + (f[2] ? " checked" : "") + ">" + f[1] + "</label>").join("");
@@ -2254,7 +2302,7 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
     else if (e.key === "ArrowLeft") t = Math.max(0, t - (e.shiftKey ? 30 : 5));
     else if (e.key === "]") { const i = SPEEDS.indexOf(speed); if (i < SPEEDS.length - 1) $("speed").children[i + 1].click(); }
     else if (e.key === "[") { const i = SPEEDS.indexOf(speed); if (i > 0) $("speed").children[i - 1].click(); }
-    else if (e.key === "Escape") { if (!$("layers").hidden) $("layerbtn").click(); else select(0); }
+    else if (e.key === "Escape") { if (!$("sharepop").hidden) { showShare(false); $("sharebtn").focus(); } else if (!$("layers").hidden) $("layerbtn").click(); else select(0); }
   });
 
   // theme changes
@@ -2269,7 +2317,10 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
   let last = performance.now();
   function frame(now) {
     const dt = Math.min(0.1, (now - last) / 1000); last = now;
-    if (rec && playing) { t += dt * speed; if (t >= rec.duration) { t = rec.duration; playing = false; setPlayIcon(); } }
+    if (rec && playing) {
+      const end = clip && playFrom >= clip.a && playFrom < clip.b ? clip.b : rec.duration;
+      t += dt * speed; if (t >= end) { t = end; playing = false; setPlayIcon(); }
+    }
     drawMap(); drawTimeline(); drawCharts();
     if (rec) {
       $("clock").innerHTML = fmt(t) + " <span>/ " + fmt(rec.duration) + "</span>";
@@ -2278,6 +2329,102 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
     requestAnimationFrame(frame);
   }
 
+  // ---------- share links ----------
+  // A link opens the same recording (?recording=<id>, ?src=<url>, or the page's own example) at a time
+  // (&t=<seconds>), optionally as a clip that plays to &end=<seconds>, following a unit (&unit=<id>).
+  // Times may also be written m:ss, h:mm:ss or 12m34s. apiHeaders never goes into a shared link.
+  let linkSrc = null, shareT = 0;
+  function parseTime(v) {
+    if (v == null || v === "") return NaN;
+    v = String(v).trim();
+    let m = /^(?:(\d+)h)?(?:(\d+)m)?(?:(\d+(?:\.\d+)?)s)?$/i.exec(v);
+    if (m && (m[1] || m[2] || m[3])) return (+m[1] || 0) * 3600 + (+m[2] || 0) * 60 + (+m[3] || 0);
+    m = /^(\d+(?:\.\d+)?)$/.exec(v); if (m) return +m[1];
+    m = /^(?:(\d+):)?(\d+):(\d{1,2}(?:\.\d+)?)$/.exec(v);
+    return m ? (+m[1] || 0) * 3600 + +m[2] * 60 + +m[3] : NaN;
+  }
+  const fmtLong = s => s >= 3600 ? Math.floor(s / 3600) + ":" + fmt(s % 3600) : fmt(s);
+  const pendingLink = (() => {
+    const p = { t: parseTime(confParams.get("t")), end: parseTime(confParams.get("end")), unit: +confParams.get("unit") || 0 };
+    return isNaN(p.t) && isNaN(p.end) && !p.unit ? null : p;
+  })();
+  let pending = pendingLink;
+  // What the address bar says: the recording that is open, or nothing for a file opened from disk.
+  function setLink(src) {
+    linkSrc = src;
+    try {
+      const q = new URLSearchParams(location.search);
+      for (const k of ["recording", "src", "t", "end", "unit"]) q.delete(k);
+      if (src && src.recording != null) q.set("recording", src.recording);
+      if (src && src.src) q.set("src", src.src);
+      const qs = q.toString();
+      history.replaceState(null, "", location.pathname + (qs ? "?" + qs : "") + location.hash);
+    } catch (_) {}
+  }
+  // The time, clip and unit from the link that opened the page, once the linked recording is in.
+  function applyPending() {
+    const p = pending; pending = null;
+    if (!p || !rec) return;
+    const D = rec.duration, a = Math.min(D, Math.max(0, isNaN(p.t) ? 0 : p.t));
+    if (!isNaN(p.end) && p.end > a) { setClip({ a, b: Math.min(D, p.end) }); t = a; playFrom = a; playing = true; setPlayIcon(); }
+    else t = a;
+    if (p.unit && rec.entities.has(p.unit)) {
+      select(p.unit); follow = true; renderCard(true);
+      const s = stateAt(rec.entities.get(p.unit), t); if (s) { view.cx = s.x; view.cy = s.y; }
+    }
+  }
+  function setClip(c) {
+    clip = c && rec && c.b > c.a ? { a: Math.max(0, c.a), b: Math.min(rec.duration, c.b) } : null;
+    const chip = $("clipchip");
+    chip.hidden = !clip;
+    if (clip) chip.textContent = "Clip " + fmtLong(clip.a) + "–" + fmtLong(clip.b) + " ✕";
+  }
+  $("clipchip").onclick = () => setClip(null);
+  function shareUrl(kind) {
+    const u = new URL(location.href);
+    for (const k of ["t", "end", "unit", "apiHeaders"]) u.searchParams.delete(k);
+    if (kind === "clip" && clip) { u.searchParams.set("t", Math.floor(clip.a)); u.searchParams.set("end", Math.ceil(clip.b)); }
+    else u.searchParams.set("t", Math.floor(shareT));
+    const f = $("sharefollow");
+    if (f && f.checked && selected) u.searchParams.set("unit", selected);
+    return u.href;
+  }
+  function renderShare() {
+    const ok = !!linkSrc, dis = ok ? "" : " disabled";
+    const a = clip ? clip.a : shareT, b = clip ? clip.b : Math.min(rec.duration, shareT + 60);
+    const e = selected ? rec.entities.get(selected) : null;
+    $("sharepop").innerHTML =
+      (ok ? "" : '<div class="note">This recording was opened from a file, so a link cannot open it. Share the file and the time instead.</div>') +
+      '<h3>Moment</h3><div class="line"><span>At <b>' + fmtLong(shareT) + '</b></span><button class="btn" data-copy="t"' + dis + ">Copy link</button></div>" +
+      '<h3>Clip</h3><div class="line"><label for="clipa">From</label><input type="text" id="clipa" value="' + fmtLong(a) + '"><button class="btn" data-now="a">Now</button>' +
+      '<label for="clipb">to</label><input type="text" id="clipb" value="' + fmtLong(b) + '"><button class="btn" data-now="b">Now</button></div>' +
+      '<div class="line"><button class="btn" data-play="">Play clip</button><button class="btn" data-copy="clip"' + dis + ">Copy clip link</button></div>" +
+      (e ? '<label class="line"><input type="checkbox" id="sharefollow"' + (follow ? " checked" : "") + "> Follow " + esc(nameAt(e, t)) + " in the link</label>" : "") +
+      '<div class="note" id="sharemsg" aria-live="polite"></div>';
+  }
+  function clipFromInputs() {
+    const a = parseTime($("clipa").value), b = parseTime($("clipb").value);
+    if (isNaN(a) || isNaN(b) || b <= a) { $("sharemsg").textContent = "The clip needs a start before its end (m:ss)."; return false; }
+    setClip({ a, b }); $("sharemsg").textContent = ""; return true;
+  }
+  function showShare(open) {
+    $("sharepop").hidden = !open; $("sharebtn").setAttribute("aria-expanded", String(open));
+    if (open && rec) { shareT = t; renderShare(); const b = $("sharepop").querySelector("button:not([disabled])"); if (b) b.focus(); }
+  }
+  $("sharebtn").onclick = () => showShare($("sharepop").hidden);
+  $("sharepop").onchange = e => { if (e.target.id === "clipa" || e.target.id === "clipb") clipFromInputs(); };
+  $("sharepop").onclick = e => {
+    const b = e.target.closest("button"); if (!b) return;
+    if (b.dataset.now) { $("clip" + b.dataset.now).value = fmtLong(t); clipFromInputs(); return; }
+    if (b.dataset.play !== undefined) { if (clipFromInputs()) { t = clip.a; playFrom = t; playing = true; setPlayIcon(); } return; }
+    if (b.dataset.copy) {
+      if (b.dataset.copy === "clip" && !clipFromInputs()) return;
+      const url = shareUrl(b.dataset.copy), msg = $("sharemsg");
+      const manual = () => { msg.innerHTML = 'Copy this link: <input type="text" readonly style="width:100%" value="' + esc(url) + '">'; msg.querySelector("input").select(); };
+      if (navigator.clipboard) navigator.clipboard.writeText(url).then(() => { msg.textContent = "Link copied."; }, manual); else manual();
+    }
+  };
+  addEventListener("click", e => { if (!$("sharepop").hidden && !e.target.closest(".share")) showShare(false); });
   readColors(); resize();
   const sample = document.getElementById("sample");
   // ?src=<url> opens a recording from a web address (the server must allow cross-origin requests).
@@ -2285,15 +2432,15 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
   if (src) {
     $("meta").innerHTML = "<span>Loading " + esc(src) + "…</span>";
     fetch(src).then(r => { if (!r.ok) throw new Error("HTTP " + r.status); return r.text(); })
-      .then(x => load(x, ""), err => { $("meta").innerHTML = ""; $("error").textContent = "Could not load " + src + ": " + err.message; $("error").hidden = false; });
-  } else if (sample) load(sample.textContent, sample.dataset.label || "Example recording");
+      .then(x => { load(x, ""); setLink({ src }); applyPending(); }, err => { $("meta").innerHTML = ""; $("error").textContent = "Could not load " + src + ": " + err.message; $("error").hidden = false; });
+  } else if (sample) { load(sample.textContent, sample.dataset.label || "Example recording"); setLink({}); applyPending(); }
   else $("meta").innerHTML = "<span>Open a <b>.jsonl</b> recording from the <b>aar</b> folder, or drop it on the page" +
     (location.protocol === "file:" ? "" : ", or try the <b>sample data</b>") + ".</span>";
   // Made-up recording on Stratis: the embedded example if there is one, else sample.jsonl next to the page
   // (the Pages build publishes it; a page opened from disk has none, so the button stays hidden there).
   $("samplebtn").hidden = !!rec || (!sample && location.protocol === "file:");
   $("samplebtn").onclick = () => {
-    if (sample) return load(sample.textContent, sample.dataset.label || "Example recording");
+    if (sample) { load(sample.textContent, sample.dataset.label || "Example recording"); setLink({}); return; }
     $("error").hidden = true;
     fetch("sample.jsonl").then(r => { if (!r.ok) throw new Error("HTTP " + r.status); return r.text(); })
       .then(x => load(x, "Sample recording (made up)"), err => { $("error").textContent = "Could not load the sample: " + err.message; $("error").hidden = false; });
@@ -2442,7 +2589,7 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
     return getText(x.url, x.api).then(t => {
       current = x.url; load(t, "");
       // Keep ?recording=<id> in the address bar so the page can be shared or reloaded.
-      try { const q = new URLSearchParams(location.search); q.delete("src"); q.set("recording", x.id); history.replaceState(null, "", "?" + q + location.hash); } catch (_) {}
+      setLink({ recording: x.id }); applyPending();
     }, err => { if (!rec) $("meta").innerHTML = ""; else renderMeta(); $("error").textContent = "Could not load " + (x.title || x.name) + ": " + err.message; $("error").hidden = false; });
   }
   $("recbtn").onclick = () => showRecList($("reclist").hidden);
