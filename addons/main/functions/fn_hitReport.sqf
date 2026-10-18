@@ -12,7 +12,7 @@ private _sender = if (isMultiplayer && {isRemoteExecuted}) then { remoteExecuted
 {
     if !(_x isEqualType []) then { continue };
     _x params [["_unit", objNull, [objNull]], ["_source", objNull, [objNull]], ["_damage", 0, [0]],
-        ["_instigator", objNull, [objNull]], ["_age", 0, [0]]];
+        ["_instigator", objNull, [objNull]], ["_time", CBA_missionTime, [0]]];
     if (isNull _unit || {_sender >= 0 && {owner _unit != _sender}}) then { continue };
-    [_unit, _source, _damage, _instigator, time - ((_age max 0) min 5)] call aar_fnc_hit;
+    [_unit, _source, _damage, _instigator, _time call aar_fnc_reportTime] call aar_fnc_hit;
 } forEach (_batch select [0, 500]);

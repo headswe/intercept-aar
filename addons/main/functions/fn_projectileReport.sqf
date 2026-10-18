@@ -10,13 +10,12 @@ params [["_batch", [], [[]]]];
 if (!aar_active || {!aar_logProjectiles}) exitWith {};
 private _sender = if (isMultiplayer && {isRemoteExecuted}) then { remoteExecutedOwner } else { -1 };
 private _key = { str _sender + ":" + str _this };
-private _num = { params ["_v", ["_default", 0]]; [_default, _v] select (_v isEqualType 0) };
 private _vec = { ((_this param [0, [], [[]]]) select [0, 3]) apply { [0, _x] select (_x isEqualType 0) } };
 
 {
     if !(_x isEqualType []) then { continue };
     private _kind = _x param [0, "", [""]];
-    private _time = time - ((((_x select -1) call _num) max 0) min 5);
+    private _time = (_x select -1) call aar_fnc_reportTime;
     switch (_kind) do {
         case "shot": {
             _x params ["", ["_cid", 0, [0]], ["_shooterObj", objNull, [objNull]], ["_instigatorObj", objNull, [objNull]],
@@ -51,7 +50,7 @@ private _vec = { ((_this param [0, [], [[]]]) select [0, 3]) apply { [0, _x] sel
         };
         case "hit";
         case "splash": {
-            // A splash entry is [kind, id, object, age]; only a hit carries a position and component.
+            // A splash entry is [kind, id, object, time]; only a hit carries a position and component.
             _x params ["", ["_cid", 0, [0]], ["_hitObj", objNull, [objNull]]];
             private _pid = aar_remoteProj getOrDefault [_cid call _key, 0];
             if (_pid <= 0) then { continue };

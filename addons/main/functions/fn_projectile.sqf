@@ -80,7 +80,7 @@ if (_kind in ["hit", "splash"]) exitWith {
     private _fields = ["id", toJSON _pid, "target", toJSON _target];
     (aar_projShots getOrDefault [_pid, ["", [], 0]]) params ["_weapon", "_from", "_instigator"];
     [_target, aar_projShooters getOrDefault [_pid, 0], _instigator, _weapon, _from,
-        [[], _this select 3] select (_kind isEqualTo "hit"), time] call aar_fnc_lastHit;
+        [[], _this select 3] select (_kind isEqualTo "hit"), CBA_missionTime] call aar_fnc_lastHit;
     // HitPart fires once per component the bullet passes through, so several lines for the
     // same projectile and target trace its path through the body.
     if (_kind isEqualTo "hit") then {

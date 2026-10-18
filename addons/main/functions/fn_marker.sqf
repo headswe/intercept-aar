@@ -6,14 +6,15 @@
  * A report about a marker the server knows itself is dropped, since the server's own marker
  * event handlers record it.
  *
- * Arguments: 0: kind <STRING>, 1: state <ARRAY>
+ * Arguments: 0: kind <STRING>, 1: state <ARRAY>, 2: CBA_missionTime on the client when it happened <NUMBER>
  */
-params [["_kind", "", [""]], ["_state", [], [[]]]];
+params [["_kind", "", [""]], ["_state", [], [[]]], ["_time", CBA_missionTime, [0]]];
 if (!aar_active || {!aar_logMarkers} || {!(_kind in ["created", "updated", "deleted"])}) exitWith {};
 _state params [["_marker", "", [""]], ["_text", "", [""]], ["_type", "", [""]], ["_color", "", [""]], ["_shape", "", [""]],
     ["_brush", "", [""]], ["_size", [1, 1], [[]]], ["_dir", 0, [0]], ["_alpha", 1, [0]], ["_pos", [0, 0, 0], [[]]],
     ["_line", [], [[]]], ["_channel", -1, [0]]];
 if (_marker isEqualTo "" || {count _marker > 128} || {markerType _marker isNotEqualTo ""}) exitWith {};
+_time = _time call aar_fnc_reportTime;
 
 // The player on the machine that sent it.
 private _by = objNull;
@@ -25,7 +26,7 @@ if (isMultiplayer && {isRemoteExecuted}) then {
 if (_kind == "deleted") exitWith {
     private _fields = ["marker", toJSON _marker];
     if (!isNull _by) then { _fields append ["by", toJSON (_by call aar_fnc_id)] };
-    ["marker_deleted", _fields] call aar_fnc_rec;
+    ["marker_deleted", _fields, _time] call aar_fnc_rec;
 };
 
 private _num = { params ["_v", "_digits"]; if (_v isEqualType 0) then { _v toFixed _digits } else { "0" } };
@@ -48,4 +49,4 @@ if (_kind == "created") then {
     _fields append ["channel", toJSON _channel];
     if (!isNull _by) then { _fields append ["owner", toJSON (_by call aar_fnc_id)] };
 };
-[["marker_updated", "marker_created"] select (_kind == "created"), _fields] call aar_fnc_rec;
+[["marker_updated", "marker_created"] select (_kind == "created"), _fields, _time] call aar_fnc_rec;

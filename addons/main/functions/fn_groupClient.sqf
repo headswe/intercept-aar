@@ -14,7 +14,8 @@
 if (isServer || {!isNil "aar_gc_ready"}) exitWith {};
 aar_gc_ready = true;
 aar_gc_cooldown = _this param [0, 120, [0]];
-aar_gc_send = { _this remoteExecCall ["aar_fnc_groupEvent", 2] };
+// Each report carries CBA_missionTime, so the server records it when it happened.
+aar_gc_send = { (_this + [CBA_missionTime]) remoteExecCall ["aar_fnc_groupEvent", 2] };
 aar_gc_scanAt = 0;
 
 addMissionEventHandler ["EachFrame", {
@@ -33,8 +34,8 @@ addMissionEventHandler ["EachFrame", {
                 private _seen = _group getVariable "aar_gc_seen";
                 if (isNil "_seen") then { _seen = createHashMap; _group setVariable ["aar_gc_seen", _seen] };
                 private _key = netId _newTarget;
-                if (time < (_seen getOrDefault [_key, -1e9]) + aar_gc_cooldown) exitWith {};
-                _seen set [_key, time];
+                if (CBA_missionTime < (_seen getOrDefault [_key, -1e9]) + aar_gc_cooldown) exitWith {};
+                _seen set [_key, CBA_missionTime];
                 ["enemy_detected", _group, _newTarget] call aar_gc_send;
             }];
             _x addEventHandler ["Fleeing", {

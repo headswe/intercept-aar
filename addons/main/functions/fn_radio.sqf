@@ -6,9 +6,11 @@
  * Reports about a unit the sending machine does not own are dropped, and an end without a
  * start is ignored.
  *
- * Arguments: 0: kind <STRING>, 1: unit <OBJECT>, 2: radio system, "acre" or "tfar" <STRING>, 3: data <ARRAY>
+ * Arguments: 0: kind <STRING>, 1: unit <OBJECT>, 2: radio system, "acre" or "tfar" <STRING>, 3: data <ARRAY>,
+ *            4: CBA_missionTime on the client when it happened (default: now) <NUMBER>
  */
-params [["_kind", "", [""]], ["_unit", objNull, [objNull]], ["_system", "", [""]], ["_data", [], [[]]]];
+params [["_kind", "", [""]], ["_unit", objNull, [objNull]], ["_system", "", [""]], ["_data", [], [[]]], ["_time", CBA_missionTime, [0]]];
+_time = _time call aar_fnc_reportTime;
 if (!aar_active || {isNull _unit} || {!(_system in ["acre", "tfar"])}) exitWith {};
 if (isMultiplayer && {isRemoteExecuted} && {remoteExecutedOwner != owner _unit}) exitWith {};
 private _id = _unit call aar_fnc_id;
@@ -32,11 +34,11 @@ switch (_kind) do {
     case "tx_start": {
         if !((_data param [0, ""]) isEqualType "") exitWith {};
         aar_radioOpen set [_key, true];
-        ["radio_tx", ["unit", toJSON _id, "system", toJSON _system] + (_data call _fnc_radio)] call aar_fnc_rec;
+        ["radio_tx", ["unit", toJSON _id, "system", toJSON _system] + (_data call _fnc_radio), _time] call aar_fnc_rec;
     };
     case "tx_end": {
         if (isNil { aar_radioOpen deleteAt _key }) exitWith {};
-        ["radio_tx_end", ["unit", toJSON _id, "system", toJSON _system, "radio_id", toJSON (_data select 0)]] call aar_fnc_rec;
+        ["radio_tx_end", ["unit", toJSON _id, "system", toJSON _system, "radio_id", toJSON (_data select 0)], _time] call aar_fnc_rec;
     };
     case "radios": {
         private _radios = [];
@@ -48,6 +50,6 @@ switch (_kind) do {
                 _radios pushBack ("{" + (_pairs joinString ",") + "}");
             };
         } forEach (_data select [0, 16]);
-        ["radios", ["unit", toJSON _id, "system", toJSON _system, "radios", "[" + (_radios joinString ",") + "]"]] call aar_fnc_rec;
+        ["radios", ["unit", toJSON _id, "system", toJSON _system, "radios", "[" + (_radios joinString ",") + "]"], _time] call aar_fnc_rec;
     };
 };

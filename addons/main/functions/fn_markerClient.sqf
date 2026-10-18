@@ -9,7 +9,8 @@
  * scripts with createMarker reach the server on their own and are left to it.
  *
  * A marker's state is [name, text, type, colour, shape, brush, size, dir, alpha, position,
- * polyline, channel].
+ * polyline, channel]. Each report carries CBA_missionTime, so the server records it when it
+ * happened.
  */
 if (!hasInterface || {!isNil "aar_mc_ready"}) exitWith {};
 aar_mc_ready = true;
@@ -22,7 +23,7 @@ aar_mc_state = {
 aar_mc_send = {
     params ["_kind", "_marker"];
     if (markerChannel _marker < 1) exitWith {};
-    [_kind, _marker call aar_mc_state] remoteExecCall ["aar_fnc_marker", 2];
+    [_kind, _marker call aar_mc_state, CBA_missionTime] remoteExecCall ["aar_fnc_marker", 2];
 };
 
 addMissionEventHandler ["MarkerCreated", {

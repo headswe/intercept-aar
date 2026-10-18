@@ -12,7 +12,7 @@ private _sender = if (isMultiplayer && {isRemoteExecuted}) then { remoteExecuted
 {
     if !(_x isEqualType []) then { continue };
     _x params [["_channel", -1, [0]], ["_person", objNull, [objNull]], ["_name", "", [""]], ["_from", "", [""]],
-        ["_text", "", [""]], ["_age", 0, [0]]];
+        ["_text", "", [""]], ["_time", CBA_missionTime, [0]]];
     if (_text isEqualTo "" || {_sender >= 0 && {!isNull _person} && {owner _person != _sender}}) then { continue };
-    [_channel, _person, _name, _from, _text, true, time - ((_age max 0) min 5)] call aar_fnc_chat;
+    [_channel, _person, _name, _from, _text, true, _time call aar_fnc_reportTime] call aar_fnc_chat;
 } forEach (_batch select [0, 100]);
