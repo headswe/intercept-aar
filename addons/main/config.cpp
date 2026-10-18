@@ -4,11 +4,18 @@ class CfgPatches {
         units[] = {};
         weapons[] = {};
         requiredVersion = 2.18;
-        requiredAddons[] = {"A3_Functions_F"};
+        requiredAddons[] = {"A3_Functions_F", "cba_settings"};
         author = "headswe";
         version = "0.1";
         versionStr = "0.1.0";
         versionAr[] = {0,1,0};
+    };
+};
+
+// The settings are registered in CBA's preInit, after its settings system is set up.
+class Extended_PreInit_EventHandlers {
+    class arma_aar_main {
+        init = "call aar_fnc_settings";
     };
 };
 
@@ -18,6 +25,7 @@ class CfgFunctions {
         class main {
             file = "\z\arma_aar\addons\main\functions";
             class init { postInit = 1; };
+            class settings {};
             class rec {};
             class pos {};
             class id {};
