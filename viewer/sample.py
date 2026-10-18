@@ -25,7 +25,7 @@ KEY = 60
 X0, Y0 = 3600.0, 5500.0            # BLUFOR start, in the hills south-east of the village
 VX, VY = 3000.0, 6000.0            # village centre (Agia Marina, Stratis)
 
-rec(0, "header", version=1, net_interval=10, mission="co12_village_raid", world="Stratis",
+rec(0, "header", version=1, net_interval=10, max_ping=300, max_desync=150000, max_packet_loss=50, disconnect_timeout=90, mission="co12_village_raid", world="Stratis",
     started_utc="2026-10-13T19:00:00Z", interval=INTERVAL, keyframe_interval=KEY, multiplayer=True,
     briefing_name="CO12 Village Raid", on_load_name="Village Raid", author="Sample Author",
     overview="Clear Agia Marina and hold it until the convoy arrives.",

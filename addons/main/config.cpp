@@ -3,7 +3,7 @@ class CfgPatches {
         name = "Arma AAR Recorder";
         units[] = {};
         weapons[] = {};
-        requiredVersion = 2.18;
+        requiredVersion = 2.20;
         requiredAddons[] = {"A3_Functions_F"};
         author = "headswe";
         version = "0.1";

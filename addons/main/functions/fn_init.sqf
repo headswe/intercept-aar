@@ -86,6 +86,18 @@ aar_subAmmo = createHashMap;
 aar_remoteProj = createHashMap;         // "client owner:client projectile id" -> projectile id, see aar_fnc_projectileReport
 aar_radioNetsPending = aar_tmfNets isNotEqualTo [];  // radio_nets is written once TMF built its presets
 
+// The server's kick limits from server.cfg, to compare the net records against. Only these
+// numbers are taken: getServerInfo also returns the server's passwords.
+private _serverLimits = [];
+if (isMultiplayer) then {
+    private _info = getServerInfo;
+    {
+        _x params ["_key", "_field"];
+        private _value = _info get _key;
+        if (!isNil "_value" && {_value isEqualType 0}) then { _serverLimits append [_field, toJSON _value] };
+    } forEach [["maxPing", "max_ping"], ["maxDesync", "max_desync"], ["maxPacketLoss", "max_packet_loss"], ["disconnectTimeout", "disconnect_timeout"]];
+};
+
 ["header", [
     "version", "1",
     "mission", toJSON missionName,
@@ -110,7 +122,7 @@ aar_radioNetsPending = aar_tmfNets isNotEqualTo [];  // radio_nets is written on
     "weather", toJSON [overcast, fog, rain],
     "game_version", toJSON (productVersion select [2, 2]),
     "mods", toJSON ((getLoadedModsInfo select { !(_x select 3) }) apply { _x select 1 })
-]] call aar_fnc_rec;
+] + _serverLimits] call aar_fnc_rec;
 
 if (aar_tmf) then { call aar_fnc_orbat };
 
