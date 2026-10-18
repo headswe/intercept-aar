@@ -85,6 +85,7 @@ main { display: grid; grid-template-columns: minmax(0, 1fr) 390px; gap: 0; min-h
 .legend i { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
 
 .card { position: absolute; right: 52px; top: 10px; width: 230px; background: var(--panel); border: 1px solid var(--rule); border-radius: 6px; padding: 10px 12px; font-size: 13px; box-shadow: 0 6px 18px rgba(0,0,0,.12); }
+.card .pic { display: block; max-width: 100%; max-height: 72px; margin: 0 0 6px; }
 .card h2 { font-family: var(--font-display); font-size: 1.15rem; font-weight: 600; margin: 0 0 2px; text-wrap: balance; }
 .card dl { display: grid; grid-template-columns: auto 1fr; gap: 2px 10px; margin: 8px 0; font-size: 12px; }
 .card dt { color: var(--ink-soft); }
@@ -196,7 +197,7 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
     <div class="meta" id="meta"></div>
     <div class="load">
       <span class="error" id="error" hidden></span>
-      <input type="file" id="file" accept=".jsonl,.json,.txt" hidden>
+      <input type="file" id="file" accept=".jsonl,.json,.txt" multiple hidden>
       <button class="btn" id="samplebtn" hidden>Sample data</button>
       <button class="btn" id="recbtn" aria-haspopup="true" aria-expanded="false" hidden>Recordings</button>
       <ul class="reclist" id="reclist" hidden></ul>
@@ -256,7 +257,7 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
     <div class="speed" id="speed"></div>
   </div>
 </div>
-<div class="drop" id="drop" hidden>Drop the .jsonl recording</div>
+<div class="drop" id="drop" hidden>Drop the .jsonl recording, aar-cfg.json or aar-icons.json</div>
 
 
 <!--TERRAINS-->
@@ -552,6 +553,79 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
     iconmanleader: "L", iconmanofficer: "O", iconmanrecon: "R", iconmanvirtual: "V" };
   const iconLetter = e => ICON_LETTERS[String(e.icon || "").toLowerCase()] || "";
 
+  // ---------- game data ----------
+  // Names and textures come from the game rather than the recording: aar_fnc_gameData on the server
+  // (or tools/export_cfg.sqf) exports the names (aar-cfg.json), and the extension (or
+  // tools/export_icons.py) the textures as PNG (aar-icons.json, which lists PNG files beside it or
+  // holds them as data URIs). They are opened like a recording, or found next to the page or in aar/
+  // when served over http, and kept in IndexedDB for next time.
+  const game = { vehicles: {}, weapons: {}, factions: {}, vehicle_icons: {}, icons: {}, images: new Map(), tinted: new Map() };
+  const lc = x => String(x || "").toLowerCase();
+  const texKey = p => { p = lc(p).replace(/\//g, "\\").replace(/^\\+/, ""); return p && !/\.[^\\]*$/.test(p) ? p + ".paa" : p; };
+  function applyGame(pack) {
+    const low = o => Object.fromEntries(Object.entries(o || {}).map(([k, v]) => [lc(k), v]));
+    if (pack.format === "aar-cfg") for (const k of ["vehicles", "weapons", "factions", "vehicle_icons"]) game[k] = low(pack[k]);
+    else if (pack.format === "aar-icons") { Object.assign(game.icons, pack.icons || {}); game.images.clear(); game.tinted.clear(); }
+    else return false;
+    cardKey = ""; feedKey = "";
+    return true;
+  }
+  const idb = (mode, fn) => new Promise((ok, fail) => {
+    const rq = indexedDB.open("aar-viewer", 1);
+    rq.onupgradeneeded = () => rq.result.createObjectStore("game");
+    rq.onerror = () => fail(rq.error);
+    rq.onsuccess = () => { const tx = rq.result.transaction("game", mode), r = fn(tx.objectStore("game")); tx.oncomplete = () => ok(r.result); tx.onerror = () => fail(tx.error); };
+  });
+  const saveGame = pack => idb("readwrite", st => st.put(pack, pack.format)).catch(() => {});
+  // Returns true when the text was one of the game data files rather than a recording.
+  // `base` is where the file came from, for the PNG files an icon list names relative to itself.
+  function gameFile(text, base) {
+    const s = text.trim();
+    if (s[0] !== "{" || s.includes("\n") || !/"aar-(cfg|icons)"/.test(s)) return false;
+    let pack; try { pack = JSON.parse(s); } catch { return false; }
+    if (pack.format === "aar-icons") {
+      const icons = {};
+      for (const [k, v] of Object.entries(pack.icons || {})) {
+        if (typeof v !== "string") continue;
+        if (/^data:image\//.test(v)) icons[k] = v;
+        else if (base) try { icons[k] = new URL(v, base).href; } catch (_) {}
+      }
+      pack = { ...pack, icons: { ...game.icons, ...icons } };
+    }
+    if (!applyGame(pack)) return false;
+    saveGame(pack);
+    $("error").hidden = true;
+    return true;
+  }
+  const weaponName = c => (game.weapons[lc(c)] || [])[0] || c;
+  const factionName = c => (game.factions[lc(c)] || [])[0] || c;
+  const vehicleRow = e => game.vehicles[lc(e.cls)] || [];
+  // The map icon texture: the recording's own, else the one the config export gives for its class.
+  const iconPath = e => e.icon_path || game.vehicle_icons[lc(e.icon || vehicleRow(e)[2])] || "";
+  function texture(path) {
+    const k = texKey(path), uri = game.icons[k];
+    if (!uri) return null;
+    let img = game.images.get(k);
+    if (!img) { img = new Image(); img.onload = () => { cardKey = ""; }; img.src = uri; game.images.set(k, img); }
+    return img.complete && img.naturalWidth ? img : null;
+  }
+  // Arma's map icons are white on transparent; drawn in the side colour like the game does.
+  function tinted(path, col) {
+    const img = path && texture(path); if (!img) return null;
+    const k = texKey(path) + "|" + col;
+    let cv = game.tinted.get(k);
+    if (!cv) {
+      cv = document.createElement("canvas"); cv.width = img.naturalWidth; cv.height = img.naturalHeight;
+      const c = cv.getContext("2d"); c.drawImage(img, 0, 0); c.globalCompositeOperation = "source-in"; c.fillStyle = col; c.fillRect(0, 0, cv.width, cv.height);
+      game.tinted.set(k, cv);
+    }
+    return cv;
+  }
+  function drawIcon(ctx, icon, sx, sy, dir, size) {
+    ctx.save(); ctx.translate(sx, sy); ctx.rotate(dir * Math.PI / 180);
+    ctx.drawImage(icon, -size / 2, -size / 2, size, size); ctx.restore();
+  }
+
   // ---------- colours ----------
   let C = {};
   function readColors() {
@@ -645,10 +719,20 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
     $("scale").querySelector("span").textContent = m >= 1000 ? m / 1000 + " km" : m + " m";
   }
 
-  function drawUnit(ctx, sx, sy, dir, col, alive, isPlayer, sel, down = false, letter = "") {
+  function drawUnit(ctx, sx, sy, dir, col, alive, isPlayer, sel, down = false, letter = "", icon = null) {
     if (!alive) {
       ctx.strokeStyle = C.dead; ctx.lineWidth = 1.6; ctx.beginPath();
       ctx.moveTo(sx - 4, sy - 4); ctx.lineTo(sx + 4, sy + 4); ctx.moveTo(sx + 4, sy - 4); ctx.lineTo(sx - 4, sy + 4); ctx.stroke();
+      return;
+    }
+    // The game's map icon, once zoomed in (about 1 px per metre), in place of the dot.
+    if (icon && view.scale >= 1) {
+      if (down) ctx.globalAlpha = 0.45;
+      drawIcon(ctx, icon, sx, sy, dir, 20);
+      ctx.globalAlpha = 1;
+      if (down) { ctx.strokeStyle = col; ctx.lineWidth = 1.5; ctx.setLineDash([2, 2]); ctx.beginPath(); ctx.arc(sx, sy, 11, 0, Math.PI * 2); ctx.stroke(); ctx.setLineDash([]); }
+      if (isPlayer && !down) { ctx.strokeStyle = C.ink; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(sx, sy, 11, 0, Math.PI * 2); ctx.stroke(); }
+      if (sel) { ctx.strokeStyle = C.accent; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(sx, sy, 14, 0, Math.PI * 2); ctx.stroke(); }
       return;
     }
     // Role letters need a bigger dot, so only once zoomed in (about 1 px per metre).
@@ -670,14 +754,17 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
     if (isPlayer && !down) { ctx.strokeStyle = C.ink; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(sx, sy, r + 2.5, 0, Math.PI * 2); ctx.stroke(); }
     if (sel) { ctx.strokeStyle = C.accent; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(sx, sy, r + 6, 0, Math.PI * 2); ctx.stroke(); }
   }
-  function drawVehicle(ctx, sx, sy, dir, col, alive, crew, sel, kind) {
+  function drawVehicle(ctx, sx, sy, dir, col, alive, crew, sel, kind, icon = null) {
     const a = dir * Math.PI / 180;
     const L = kind === "tank" ? 12 : kind === "heli" || kind === "plane" || kind === "air" ? 13 : 10, Wd = kind === "static" ? 6 : 7;
-    ctx.save(); ctx.translate(sx, sy); ctx.rotate(a);
-    ctx.fillStyle = alive ? col : C.dead; ctx.strokeStyle = C.ground; ctx.lineWidth = 1.5;
-    ctx.beginPath(); ctx.roundRect(-Wd, -L, Wd * 2, L * 2, 2.5); ctx.fill(); ctx.stroke();
-    ctx.fillStyle = C.ground; ctx.beginPath(); ctx.moveTo(0, -L + 2); ctx.lineTo(-3.5, -L + 7); ctx.lineTo(3.5, -L + 7); ctx.fill();
-    ctx.restore();
+    if (icon) drawIcon(ctx, icon, sx, sy, dir, L * 2.6);
+    else {
+      ctx.save(); ctx.translate(sx, sy); ctx.rotate(a);
+      ctx.fillStyle = alive ? col : C.dead; ctx.strokeStyle = C.ground; ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.roundRect(-Wd, -L, Wd * 2, L * 2, 2.5); ctx.fill(); ctx.stroke();
+      ctx.fillStyle = C.ground; ctx.beginPath(); ctx.moveTo(0, -L + 2); ctx.lineTo(-3.5, -L + 7); ctx.lineTo(3.5, -L + 7); ctx.fill();
+      ctx.restore();
+    }
     if (crew > 0) {
       ctx.fillStyle = C.ink; ctx.font = "600 11px " + getComputedStyle(document.body).getPropertyValue("--font-data");
       ctx.textAlign = "left"; ctx.textBaseline = "middle"; ctx.fillText(String(crew), sx + L + 3, sy - L + 2);
@@ -966,14 +1053,16 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
     for (const [e, s] of states) {
       if (e.kind === "unit" || !layers.vehicles) continue;
       const [sx, sy] = toScreen(s.x, s.y);
-      drawVehicle(ctx, sx, sy, s.dir, sideColor(sideAt(e, t)), s.alive, crew.get(e.id) || 0, e.id === selected, e.kind);
+      const col = sideColor(sideAt(e, t));
+      drawVehicle(ctx, sx, sy, s.dir, col, s.alive, crew.get(e.id) || 0, e.id === selected, e.kind, tinted(iconPath(e), s.alive ? col : C.dead));
       drawn.push([e.id, sx, sy]);
     }
     for (const [e, s] of states) {
       if (e.kind !== "unit" || (s.veh && s.alive) || !layers.units) continue;
       const [sx, sy] = toScreen(s.x, s.y);
       const isP = isPlayerAt(e, t);
-      drawUnit(ctx, sx, sy, s.dir, sideColor(sideAt(e, t)), s.alive, isP, e.id === selected, s.alive && downAt(e, t), iconLetter(e));
+      const col = sideColor(sideAt(e, t));
+      drawUnit(ctx, sx, sy, s.dir, col, s.alive, isP, e.id === selected, s.alive && downAt(e, t), iconLetter(e), s.alive ? tinted(iconPath(e), col) : null);
       drawn.push([e.id, sx, sy]);
       if (e.id === selected && s.alive) {
         ctx.fillStyle = C.ink; ctx.font = "12px " + getComputedStyle(document.body).getPropertyValue("--font-ui");
@@ -1380,7 +1469,7 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
       case "killed": {
         const by = o.instigator || o.killer;
         return ["kills", '<span class="k s-EAST">Killed</span> ' + who(o.victim, o.t) + (by && by !== o.victim ? " by " + who(by, o.t) : "") +
-          (o.weapon ? ' <span class="tag">' + esc(o.weapon_name || o.weapon) + "</span>" : "") +
+          (o.weapon ? ' <span class="tag">' + esc(o.weapon_name || weaponName(o.weapon)) + "</span>" : "") +
           (o.distance !== undefined ? ' <span class="tag">' + Math.round(o.distance) + " m</span>" : "") +
           (o.credit === "last_hit" ? ' <span class="tag" title="The game named no killer; credited to the last hit">last hit</span>' : "") +
           (o.cause && !/^#(scripted|setdead)$/i.test(o.cause) ? ' <span class="tag">' + esc(String(o.cause).replace(/^#/, "")) + "</span>" : "") +
@@ -1389,9 +1478,9 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
       case "unconscious": return ["kills", '<span class="k">Unconscious</span> ' + who(o.unit, o.t) + (o.by ? " after a hit from " + who(o.by, o.t) : "") + (o.pos ? ' <span class="tag">' + grid(o.pos[0], o.pos[1]) + "</span>" : "")];
       case "awake": return ["kills", who(o.unit, o.t) + " woke up"];
       case "proj_hit": { const s = rec.shots.get(o.id); return ["hits", who(o.target, o.t) + " hit" + (o.part ? ' in <span class="tag">' + esc(o.part) + "</span>" : "") + (s && s.shooter ? " by " + who(s.gunner || s.shooter, o.t) : "")]; }
-      case "proj_splash": { const s = rec.shots.get(o.id); return ["hits", who(o.target, o.t) + " caught in blast" + (s && s.ammo ? ' <span class="tag">' + esc(s.ammo) + "</span>" : "")]; }
+      case "proj_splash": { const s = rec.shots.get(o.id); return ["hits", who(o.target, o.t) + " caught in blast" + (s && (s.weapon || s.ammo) ? ' <span class="tag">' + esc(s.weapon ? weaponName(s.weapon) : s.ammo) + "</span>" : "")]; }
       case "hit": return ["hits", who(o.unit, o.t) + ' took <span class="tag">' + Math.round(o.damage * 100) + "%</span> damage" + (o.instigator || o.source ? " from " + who(o.instigator || o.source, o.t) : "")];
-      case "shot": return ["shots", who(o.instigator || o.shooter, o.t) + ' fired <span class="tag">' + esc(o.weapon || o.ammo) + "</span>"];
+      case "shot": return ["shots", who(o.instigator || o.shooter, o.t) + ' fired <span class="tag">' + esc(o.weapon ? weaponName(o.weapon) : o.ammo) + "</span>"];
       case "get_in": return ["vehicles", who(o.unit, o.t) + " got in " + who(o.vehicle, o.t) + ' <span class="tag">' + esc(o.role) + "</span>"];
       case "get_out": return ["vehicles", who(o.unit, o.t) + (o.eject ? " ejected from " : " got out of ") + who(o.vehicle, o.t)];
       case "seat": return ["vehicles", who(o.unit, o.t) + " moved to " + esc(o.role) + " in " + who(o.vehicle, o.t)];
@@ -1535,9 +1624,12 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
     const oid = orbatAt(e, t), node = oid !== undefined ? rec.nodes.get(oid) : null;
     const killsBy = rec.kills.filter(k => k.t <= t && k.victim !== e.id && (k.instigator || k.killer) === e.id).length;
     const shotsBy = rec.shotList.filter(x => x.t0 <= t && (x.gunner || x.shooter) === e.id).length;
-    card.innerHTML = '<h2 class="s-' + esc(sideAt(e, t)) + '">' + esc(nameAt(e, t)) + '</h2><div class="tag">' + esc(e.display) + " · " + esc(e.cls) + "</div><dl>" +
+    // Vehicle pictures are white silhouettes, so drawn in the ink colour to show on either theme.
+    const pic = tinted(vehicleRow(e)[1], C.ink);
+    let picUrl = ""; try { picUrl = pic ? pic.toDataURL() : ""; } catch (_) {}
+    card.innerHTML = (picUrl ? '<img class="pic" alt="" src="' + picUrl + '">' : "") + '<h2 class="s-' + esc(sideAt(e, t)) + '">' + esc(nameAt(e, t)) + '</h2><div class="tag">' + esc(e.display) + " · " + esc(e.cls) + "</div><dl>" +
       "<dt>Status</dt><dd>" + (!s ? "not present" : s.alive ? (down ? "unconscious, " : "alive, ") + Math.round(s.dmg * 100) + "% damage" : "dead") + "</dd>" +
-      (e.faction_name || e.faction ? "<dt>Faction</dt><dd>" + esc(e.faction_name || e.faction) + "</dd>" : "") +
+      (e.faction_name || e.faction ? "<dt>Faction</dt><dd>" + esc(e.faction_name || factionName(e.faction)) + "</dd>" : "") +
       (e.role_desc ? "<dt>Slot</dt><dd>" + esc(e.role_desc) + "</dd>" : "") +
       (e.var_name ? "<dt>Variable</dt><dd>" + esc(e.var_name) + "</dd>" : "") +
       (e.kind === "unit" ? "<dt>Group</dt><dd>" + esc(groupAt(e, t) || "–") + (shortName(sideAt(e, t), groupAt(e, t)) ? " · " + esc(shortName(sideAt(e, t), groupAt(e, t))) : "") + "</dd>" : "") +
@@ -1546,7 +1638,7 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
       radioRows(e) +
       (e.callsign ? "<dt>Callsign</dt><dd>" + esc(e.callsign) + "</dd>" : "") +
       (uidAt(e, t) ? "<dt>UID</dt><dd>" + esc(uidAt(e, t)) + "</dd>" : "") +
-      (veh ? "<dt>Vehicle</dt><dd>" + esc(veh.display) + "</dd>" : "") +
+      (veh ? "<dt>Vehicle</dt><dd>" + esc(veh.display || vehicleRow(veh)[0] || veh.cls) + "</dd>" : "") +
       (s ? "<dt>Grid</dt><dd>" + grid(s.x, s.y) + " · " + Math.round(s.dir) + "°</dd>" : "") +
       "<dt>Shots</dt><dd>" + shotsBy + "</dd><dt>Kills</dt><dd>" + killsBy + "</dd></dl>" +
       '<div class="row"><button class="btn" id="follow" aria-pressed="' + follow + '">' + (follow ? "Stop following" : "Follow") + '</button><button class="btn" id="deselect">Close</button></div>';
@@ -1951,14 +2043,18 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
   });
   $("zin").onclick = () => zoomAt(1.5); $("zout").onclick = () => zoomAt(1 / 1.5); $("zfit").onclick = () => rec && fit();
   $("open").onclick = () => $("file").click();
-  $("file").onchange = e => { const f = e.target.files[0]; if (f) f.text().then(x => { current = ""; load(x, ""); }); e.target.value = ""; };
+  // Several files can come at once: the game data files and one recording.
+  function openFiles(files) {
+    for (const f of files) f.text().then(x => { if (!gameFile(x)) { current = ""; load(x, ""); } });
+  }
+  $("file").onchange = e => { openFiles([...e.target.files]); e.target.value = ""; };
 
   // drag and drop
   let dragDepth = 0;
   addEventListener("dragenter", e => { if ([...e.dataTransfer.types].includes("Files")) { dragDepth++; $("drop").hidden = false; e.preventDefault(); } });
   addEventListener("dragover", e => e.preventDefault());
   addEventListener("dragleave", () => { if (--dragDepth <= 0) { dragDepth = 0; $("drop").hidden = true; } });
-  addEventListener("drop", e => { e.preventDefault(); dragDepth = 0; $("drop").hidden = true; const f = e.dataTransfer.files[0]; if (f) f.text().then(x => { current = ""; load(x, ""); }); });
+  addEventListener("drop", e => { e.preventDefault(); dragDepth = 0; $("drop").hidden = true; openFiles([...e.dataTransfer.files]); });
 
   // map pan / zoom / pick
   const pointers = new Map(); let moved = 0, pinch = 0;
@@ -2105,6 +2201,13 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
   };
   addEventListener("click", e => { if (!$("reclist").hidden && !e.target.closest("#reclist, #recbtn")) showRecList(false); });
   addEventListener("keydown", e => { if (e.key === "Escape" && !$("reclist").hidden) { showRecList(false); $("recbtn").focus(); } });
+  // Game data: what was opened before, then any newer files next to the page or in aar/.
+  idb("readonly", st => st.getAll()).then(packs => { for (const p of packs || []) applyGame(p); }).catch(() => {}).then(async () => {
+    if (location.protocol === "file:") return;
+    for (const name of ["aar-cfg.json", "aar-icons.json"]) for (const dir of ["", "aar/"]) {
+      try { const u = new URL(dir + name, location.href), r = await fetch(u, { cache: "no-cache" }); if (r.ok && gameFile(await r.text(), u.href)) break; } catch (_) {}
+    }
+  });
   if (location.protocol !== "file:") findRecordings().then(list => {
     if (!list.length) return;
     recordings = list;
