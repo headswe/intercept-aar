@@ -8,10 +8,10 @@
 //   "arma_aar" callExtension "version"
 //
 // Game data for the viewer (aar_fnc_gameData, see gamedata.hpp):
-//   "arma_aar" callExtension ["gd_check", [key]]          -> "1" if aar-cfg.json and aar-icons.json are up to date,
-//                                                            "busy" while an export runs, else "0" (and starts one)
+//   "arma_aar" callExtension ["gd_begin", []]             -> "ok" (starts collecting), or "busy" while an export runs
 //   "arma_aar" callExtension ["gd_add", [table, json]]     -> adds a JSON object of rows to a table of aar-cfg.json
-//   "arma_aar" callExtension ["gd_done", [header, textures, mod folders]] -> writes the files on a background thread
+//   "arma_aar" callExtension ["gd_done", [header, textures, mod folders]] -> writes aar-cfg.json, the PNGs and
+//                                                            aar-icons.json on a background thread
 //   "arma_aar" callExtension "gd_status"                   -> "busy", or how the last export went
 //
 // All calls come from the game thread; the files are written on background threads.
@@ -144,20 +144,12 @@ int gamedata(std::string_view fn, char* output, unsigned int size, const char** 
     auto arg = [&](unsigned int i) { return i < argc ? aar::unquote_sqf(argv[i]) : std::string(); };
     if (gd_busy) {
         set_output(output, size, "busy");
-        return fn == "gd_check" ? ok : error;
+        return fn == "gd_begin" ? ok : error;
     }
-    if (fn == "gd_check") {
-        fs::path dir = output_dir();
-        std::string key = arg(0);
-        std::error_code ec;
-        bool fresh = !key.empty() && aar::gamedata::stored_key(dir) == key && fs::exists(dir / "aar-cfg.json", ec) &&
-                     fs::exists(dir / "aar-icons.json", ec);
-        if (!fresh) {
-            gd_job() = aar::gamedata::job();
-            gd_job().dir = dir;
-            gd_job().key = key;
-        }
-        set_output(output, size, fresh ? "1" : "0");
+    if (fn == "gd_begin") {
+        gd_job() = aar::gamedata::job();
+        gd_job().dir = output_dir();
+        set_output(output, size, "ok");
         return ok;
     }
     if (fn == "gd_add") {
@@ -173,7 +165,7 @@ int gamedata(std::string_view fn, char* output, unsigned int size, const char** 
         aar::gamedata::job j = std::move(gd_job());
         gd_job() = aar::gamedata::job();
         if (j.dir.empty()) {
-            set_output(output, size, "no gd_check before gd_done");
+            set_output(output, size, "no gd_begin before gd_done");
             return error;
         }
         j.header = arg(0);

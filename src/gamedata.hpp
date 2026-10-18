@@ -5,8 +5,8 @@
 //
 // Writes, next to the recordings:
 //   aar-cfg.json        names, pictures and icon classes (the format of tools/export_cfg.sqf)
-//   aar-icons.json      {"format":"aar-icons","icons":{"<texture path>":"data:image/png;base64,..."}}
-//   aar-gamedata.key    game version and mod list the files were made for
+//   icons/...png        every texture it names, one PNG each, at the texture's own path
+//   aar-icons.json      {"format":"aar-icons","icons":{"<texture path>":"icons/<path>.png"}}
 
 #include <algorithm>
 #include <cstdint>
@@ -322,24 +322,106 @@ inline void be32(std::string& s, uint32_t v) {
 
 }  // namespace detail
 
-// An RGBA PNG. The image data is stored uncompressed (deflate "stored" blocks), so no zlib is needed;
-// map icons are small.
+namespace detail {
+
+struct bit_writer {
+    std::string out;
+    uint32_t acc = 0;
+    int n = 0;
+    void put(uint32_t v, int bits) {
+        acc |= v << n;
+        n += bits;
+        for (; n >= 8; n -= 8, acc >>= 8) out += char(acc & 0xFF);
+    }
+    // Huffman codes go most significant bit first.
+    void huff(uint32_t code, int bits) {
+        uint32_t r = 0;
+        for (int i = 0; i < bits; ++i) r |= ((code >> i) & 1) << (bits - 1 - i);
+        put(r, bits);
+    }
+    void flush() {
+        if (n > 0) out += char(acc & 0xFF);
+        acc = 0;
+        n = 0;
+    }
+};
+
+inline void fixed_literal(bit_writer& w, int v) {
+    if (v < 144) w.huff(uint32_t(0x30 + v), 8);
+    else if (v < 256) w.huff(uint32_t(0x190 + v - 144), 9);
+    else if (v < 280) w.huff(uint32_t(v - 256), 7);
+    else w.huff(uint32_t(0xC0 + v - 280), 8);
+}
+
+// Deflate with the fixed Huffman codes and a hash-chain LZ77 matcher: no zlib needed, and the
+// transparent areas of icons and pictures shrink to almost nothing.
+inline std::string deflate(const std::string& in) {
+    static const int len_base[29] = {3, 4, 5, 6, 7, 8, 9, 10, 11, 13, 15, 17, 19, 23, 27, 31, 35, 43, 51, 59, 67, 83, 99, 115, 131, 163, 195, 227, 258};
+    static const int len_extra[29] = {0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3, 4, 4, 4, 4, 5, 5, 5, 5, 0};
+    static const int dist_base[30] = {1, 2, 3, 4, 5, 7, 9, 13, 17, 25, 33, 49, 65, 97, 129, 193, 257, 385, 513, 769, 1025, 1537, 2049, 3073, 4097, 6145, 8193, 12289, 16385, 24577};
+    static const int dist_extra[30] = {0, 0, 0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 8, 8, 9, 9, 10, 10, 11, 11, 12, 12, 13, 13};
+    bit_writer w;
+    w.put(1, 1);  // last block
+    w.put(1, 2);  // fixed Huffman codes
+    const size_t n = in.size();
+    const auto* s = reinterpret_cast<const uint8_t*>(in.data());
+    std::vector<long> head(1 << 15, -1), prev(n, -1);
+    auto hash = [&](size_t k) { return ((s[k] << 10) ^ (s[k + 1] << 5) ^ s[k + 2]) & 0x7FFF; };
+    auto insert = [&](size_t k) {
+        if (k + 2 >= n) return;
+        int h = hash(k);
+        prev[k] = head[h];
+        head[h] = long(k);
+    };
+    size_t i = 0;
+    while (i < n) {
+        size_t best = 0, dist = 0;
+        if (i + 2 < n) {
+            long c = head[hash(i)];
+            for (int tries = 0; c >= 0 && tries < 32 && i - size_t(c) <= 32768; ++tries, c = prev[size_t(c)]) {
+                size_t l = 0, max_len = std::min<size_t>(258, n - i);
+                while (l < max_len && s[size_t(c) + l] == s[i + l]) ++l;
+                if (l > best) {
+                    best = l;
+                    dist = i - size_t(c);
+                    if (l == max_len) break;
+                }
+            }
+        }
+        if (best >= 3) {
+            int li = 28;
+            while (len_base[li] > int(best)) --li;
+            fixed_literal(w, 257 + li);
+            w.put(uint32_t(int(best) - len_base[li]), len_extra[li]);
+            int di = 29;
+            while (dist_base[di] > int(dist)) --di;
+            w.huff(uint32_t(di), 5);
+            w.put(uint32_t(int(dist) - dist_base[di]), dist_extra[di]);
+            for (size_t k = 0; k < best; ++k) insert(i + k);
+            i += best;
+        } else {
+            fixed_literal(w, s[i]);
+            insert(i);
+            ++i;
+        }
+    }
+    fixed_literal(w, 256);
+    w.flush();
+    return w.out;
+}
+
+}  // namespace detail
+
+// An RGBA PNG.
 inline std::string png(const image& img) {
     std::string raw;
     for (int y = 0; y < img.h; ++y) {
         raw += '\0';
         raw.append(reinterpret_cast<const char*>(&img.rgba[size_t(y) * img.w * 4]), size_t(img.w) * 4);
     }
-    std::string z = "\x78\x01";
+    std::string z = "\x78\x01" + detail::deflate(raw);
     uint32_t a = 1, b = 0;
     for (unsigned char c : raw) { a = (a + c) % 65521; b = (b + a) % 65521; }
-    for (size_t i = 0; i < raw.size() || i == 0; i += 65535) {
-        size_t len = std::min<size_t>(65535, raw.size() - i);
-        z += char(i + len >= raw.size() ? 1 : 0);
-        z += char(len & 0xFF); z += char(len >> 8);
-        z += char(~len & 0xFF); z += char((~len >> 8) & 0xFF);
-        z.append(raw, i, len);
-    }
     detail::be32(z, (b << 16) | a);
     std::string out = "\x89PNG\r\n\x1a\n";
     auto chunk = [&](const char* tag, const std::string& body) {
@@ -484,12 +566,11 @@ inline std::string_view json_members(std::string_view obj) {
 
 struct job {
     std::filesystem::path dir;           // where the recordings go
-    std::string key;                     // game version and mod list
     std::string header;                  // extra top-level members for aar-cfg.json, as a JSON object
     std::map<std::string, std::string> tables;  // "vehicles" -> joined object members
     std::vector<std::string> textures;   // texture paths to export
     std::vector<std::filesystem::path> search;  // folders searched for PBOs
-    int size = 32;                       // smallest mipmap side kept
+    int size = 128;                      // smallest mipmap side kept
 };
 
 inline bool write_file(const std::filesystem::path& path, const std::string& text) {
@@ -507,7 +588,7 @@ inline bool write_file(const std::filesystem::path& path, const std::string& tex
 // Returns a line for the log.
 inline std::string run(const job& j) {
     namespace fs = std::filesystem;
-    std::string cfg = "{\"format\":\"aar-cfg\",\"version\":1,\"key\":" + json_string(j.key);
+    std::string cfg = "{\"format\":\"aar-cfg\",\"version\":1";
     std::string_view head = json_members(j.header);
     if (!head.empty()) cfg += "," + std::string(head);
     for (const auto& [name, members] : j.tables) cfg += "," + json_string(name) + ":{" + members + "}";
@@ -529,6 +610,9 @@ inline std::string run(const job& j) {
         }
     }
 
+    // A fresh icons folder, so textures no longer in the game don't linger.
+    std::error_code ec;
+    fs::remove_all(j.dir / "icons", ec);
     std::map<std::string, std::string> icons;
     size_t failed = 0, missing = 0;
     for (const std::string& t : j.textures) {
@@ -542,7 +626,14 @@ inline std::string run(const job& j) {
             bytes data(e->second.size);
             if (!f.read(reinterpret_cast<char*>(data.data()), std::streamsize(data.size()))) throw std::runtime_error("read failed");
             if (e->second.packed) data = lzss(data.data(), data.size(), e->second.original);
-            icons[key] = "data:image/png;base64," + base64(png(paa(data, j.size)));
+            // icons/<texture path>.png; game paths have no "..", but never write outside the folder.
+            std::string rel = key.substr(0, key.size() - 4) + ".png";
+            for (char& c : rel) if (c == '\\') c = '/'; else if (c == ':' || c == '*' || c == '?' || c == '"' || c == '<' || c == '>' || c == '|') c = '_';
+            if (rel.find("..") != std::string::npos) throw std::runtime_error("bad path");
+            fs::path file = j.dir / "icons" / fs::u8path(rel);
+            fs::create_directories(file.parent_path(), ec);
+            if (!write_file(file, png(paa(data, j.size)))) throw std::runtime_error("write failed");
+            icons[key] = "icons/" + rel;
         } catch (const std::exception&) {
             ++failed;
         }
@@ -555,15 +646,8 @@ inline std::string run(const job& j) {
     }
     pack += "}}";
     if (!write_file(j.dir / "aar-icons.json", pack)) return "could not write aar-icons.json";
-    // Last, so an export cut short is redone next mission.
-    write_file(j.dir / "aar-gamedata.key", j.key);
-    return std::to_string(pbos) + " PBOs searched, " + std::to_string(icons.size()) + " icons written, " +
+    return std::to_string(pbos) + " PBOs searched, " + std::to_string(icons.size()) + " PNGs written, " +
            std::to_string(failed) + " failed, " + std::to_string(missing) + " not found";
-}
-
-inline std::string stored_key(const std::filesystem::path& dir) {
-    std::ifstream f(dir / "aar-gamedata.key", std::ios::binary);
-    return std::string(std::istreambuf_iterator<char>(f), std::istreambuf_iterator<char>());
 }
 
 }  // namespace aar::gamedata

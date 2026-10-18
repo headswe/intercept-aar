@@ -96,6 +96,10 @@ int main(int argc, char** argv) {
     CHECK(img.rgba[0] == 255 && img.rgba[1] == 0 && img.rgba[2] == 0 && img.rgba[3] == 255);
     CHECK(img.rgba[60] == 0 && img.rgba[62] == 255);
 
+    // Deflate: a run, then repeats at several distances; checked by inflating it again in the tests'
+    // Python half too (tests/test_export_icons.py reads a PNG the extension wrote).
+    std::string z = aar::gamedata::detail::deflate(std::string(1000, '\0') + "abcabcabcabcxyz" + std::string(300, 'q'));
+    CHECK(z.size() < 60);
     std::string p = png(img);
     CHECK(p.compare(0, 8, "\x89PNG\r\n\x1a\n") == 0);
     CHECK(base64("abcd") == "YWJjZA==");
@@ -108,6 +112,7 @@ int main(int argc, char** argv) {
     fs::remove_all(dir);
     fs::create_directories(dir / "game" / "Addons");
     bytes icon = paa_file(0xFF01, 4, 4, dxt1_block(0xFFFF, 0xFFFF, idx));
+    image img_white = paa(icon, 128);
     std::string pbo;
     pbo += '\0';
     put32(pbo, 0x56657273); put32(pbo, 0); put32(pbo, 0); put32(pbo, 0); put32(pbo, 0);
@@ -125,20 +130,21 @@ int main(int argc, char** argv) {
 
     job j;
     j.dir = dir;
-    j.key = "2.22|a3";
     j.header = R"({"game":222})";
     j.tables["weapons"] = R"("arifle_MX_F":["MX 6.5 mm",""])";
     j.textures = {"\\A3\\ui_f\\data\\map\\VehicleIcons\\iconMan_ca.paa", "\\A3\\missing.paa"};
     j.search = {dir / "game" / "Addons"};
     std::string result = run(j);
-    CHECK(result == "1 PBOs searched, 1 icons written, 0 failed, 1 not found");
+    CHECK(result == "1 PBOs searched, 1 PNGs written, 0 failed, 1 not found");
     std::ifstream cf(dir / "aar-cfg.json");
     std::string cfg((std::istreambuf_iterator<char>(cf)), std::istreambuf_iterator<char>());
-    CHECK(cfg == R"({"format":"aar-cfg","version":1,"key":"2.22|a3","game":222,"weapons":{"arifle_MX_F":["MX 6.5 mm",""]}})");
+    CHECK(cfg == R"({"format":"aar-cfg","version":1,"game":222,"weapons":{"arifle_MX_F":["MX 6.5 mm",""]}})");
     std::ifstream pf(dir / "aar-icons.json");
     std::string pack((std::istreambuf_iterator<char>(pf)), std::istreambuf_iterator<char>());
-    CHECK(pack.find(R"("a3\\ui_f\\data\\map\\vehicleicons\\iconman_ca.paa":"data:image/png;base64,iVBORw0KGgo)") != std::string::npos);
-    CHECK(stored_key(dir) == "2.22|a3");
+    CHECK(pack == R"({"format":"aar-icons","version":1,"icons":{"a3\\ui_f\\data\\map\\vehicleicons\\iconman_ca.paa":"icons/a3/ui_f/data/map/vehicleicons/iconman_ca.png"}})");
+    std::ifstream png_file(dir / "icons" / "a3" / "ui_f" / "data" / "map" / "vehicleicons" / "iconman_ca.png", std::ios::binary);
+    std::string png_data((std::istreambuf_iterator<char>(png_file)), std::istreambuf_iterator<char>());
+    CHECK(png_data == png(img_white));
     fs::remove_all(dir);
 
     if (failures) std::printf("%d failure(s)\n", failures);

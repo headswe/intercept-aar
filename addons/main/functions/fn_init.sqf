@@ -4,8 +4,7 @@
  *
  * Mission settings in description.ext (all optional):
  *   class AAR { enabled = 1; interval = 1; keyframeInterval = 60; logProjectiles = 1; logHits = 1; logMarkers = 1;
- *               frameBudget = 2; spikeThreshold = 100; pauseWhenEmpty = 1; logAI = 1; enemyDetectedCooldown = 120; logRadio = 1;
- *               exportGameData = 1; };
+ *               frameBudget = 2; spikeThreshold = 100; pauseWhenEmpty = 1; logAI = 1; enemyDetectedCooldown = 120; logRadio = 1; };
  */
 if (!isServer) exitWith {};
 aar_active = false;
@@ -109,9 +108,6 @@ aar_radioNetsPending = aar_tmfNets isNotEqualTo [];  // radio_nets is written on
 ]] call aar_fnc_rec;
 
 if (aar_tmf) then { call aar_fnc_orbat };
-
-// Names and map icons for the viewer, next to the recordings; only when the mods have changed.
-if ((["exportGameData", 1] call _setting) != 0) then { [] spawn aar_fnc_gameData };
 
 if (aar_logHits) then {
     [[], aar_fnc_hitClient] remoteExecCall ["call", -2, "aar_hitClient"];

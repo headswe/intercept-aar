@@ -548,10 +548,11 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
   const iconLetter = e => ICON_LETTERS[String(e.icon || "").toLowerCase()] || "";
 
   // ---------- game data ----------
-  // Names and textures come from the game rather than the recording: tools/export_cfg.sqf exports the
-  // names (aar-cfg.json), tools/export_icons.py the textures as PNG (aar-icons.json). They are opened
-  // like a recording, or found next to the page or in aar/ when served over http, and kept in
-  // IndexedDB for next time.
+  // Names and textures come from the game rather than the recording: aar_fnc_gameData on the server
+  // (or tools/export_cfg.sqf) exports the names (aar-cfg.json), and the extension (or
+  // tools/export_icons.py) the textures as PNG (aar-icons.json, which lists PNG files beside it or
+  // holds them as data URIs). They are opened like a recording, or found next to the page or in aar/
+  // when served over http, and kept in IndexedDB for next time.
   const game = { vehicles: {}, weapons: {}, factions: {}, vehicle_icons: {}, icons: {}, images: new Map(), tinted: new Map() };
   const lc = x => String(x || "").toLowerCase();
   const texKey = p => { p = lc(p).replace(/\//g, "\\").replace(/^\\+/, ""); return p && !/\.[^\\]*$/.test(p) ? p + ".paa" : p; };
@@ -571,11 +572,20 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
   });
   const saveGame = pack => idb("readwrite", st => st.put(pack, pack.format)).catch(() => {});
   // Returns true when the text was one of the game data files rather than a recording.
-  function gameFile(text) {
+  // `base` is where the file came from, for the PNG files an icon list names relative to itself.
+  function gameFile(text, base) {
     const s = text.trim();
     if (s[0] !== "{" || s.includes("\n") || !/"aar-(cfg|icons)"/.test(s)) return false;
     let pack; try { pack = JSON.parse(s); } catch { return false; }
-    if (pack.format === "aar-icons" && game.icons) pack = { ...pack, icons: { ...game.icons, ...pack.icons } };
+    if (pack.format === "aar-icons") {
+      const icons = {};
+      for (const [k, v] of Object.entries(pack.icons || {})) {
+        if (typeof v !== "string") continue;
+        if (/^data:image\//.test(v)) icons[k] = v;
+        else if (base) try { icons[k] = new URL(v, base).href; } catch (_) {}
+      }
+      pack = { ...pack, icons: { ...game.icons, ...icons } };
+    }
     if (!applyGame(pack)) return false;
     saveGame(pack);
     $("error").hidden = true;
@@ -1572,7 +1582,8 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
     const shotsBy = rec.shotList.filter(x => x.t0 <= t && (x.gunner || x.shooter) === e.id).length;
     // Vehicle pictures are white silhouettes, so drawn in the ink colour to show on either theme.
     const pic = tinted(vehicleRow(e)[1], C.ink);
-    card.innerHTML = (pic ? '<img class="pic" alt="" src="' + pic.toDataURL() + '">' : "") + '<h2 class="s-' + esc(sideAt(e, t)) + '">' + esc(nameAt(e, t)) + '</h2><div class="tag">' + esc(e.display) + " · " + esc(e.cls) + "</div><dl>" +
+    let picUrl = ""; try { picUrl = pic ? pic.toDataURL() : ""; } catch (_) {}
+    card.innerHTML = (picUrl ? '<img class="pic" alt="" src="' + picUrl + '">' : "") + '<h2 class="s-' + esc(sideAt(e, t)) + '">' + esc(nameAt(e, t)) + '</h2><div class="tag">' + esc(e.display) + " · " + esc(e.cls) + "</div><dl>" +
       "<dt>Status</dt><dd>" + (!s ? "not present" : s.alive ? (down ? "unconscious, " : "alive, ") + Math.round(s.dmg * 100) + "% damage" : "dead") + "</dd>" +
       (e.faction_name || e.faction ? "<dt>Faction</dt><dd>" + esc(e.faction_name || factionName(e.faction)) + "</dd>" : "") +
       (e.role_desc ? "<dt>Slot</dt><dd>" + esc(e.role_desc) + "</dd>" : "") +
@@ -2117,7 +2128,7 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
   idb("readonly", st => st.getAll()).then(packs => { for (const p of packs || []) applyGame(p); }).catch(() => {}).then(async () => {
     if (location.protocol === "file:") return;
     for (const name of ["aar-cfg.json", "aar-icons.json"]) for (const dir of ["", "aar/"]) {
-      try { const r = await fetch(new URL(dir + name, location.href), { cache: "no-cache" }); if (r.ok && gameFile(await r.text())) break; } catch (_) {}
+      try { const u = new URL(dir + name, location.href), r = await fetch(u, { cache: "no-cache" }); if (r.ok && gameFile(await r.text(), u.href)) break; } catch (_) {}
     }
   });
   if (location.protocol !== "file:") findRecordings().then(list => {
