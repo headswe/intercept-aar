@@ -4,7 +4,9 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=IBM+Plex+Sans+Condensed:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
 <style>
 /* Layout: a map table. Plotting board fills the screen, a side ledger lists events and units, and a transport strip along the bottom carries the timeline. */
-:root {
+/* The map (.board) keeps the light paper colours in dark mode too: Arma's marker colours and the
+   map tiles are made for a light map, so only the panels and controls around it go dark. */
+:root, .board {
   --ground: #e9ebe2;      /* map paper */
   --panel: #f6f7f2;
   --ink: #1d221c;
@@ -60,7 +62,7 @@ h1 { font-family: var(--font-display); font-weight: 700; font-size: 1.5rem; lett
 .btn.primary { background: var(--ink); color: var(--ground); border-color: var(--ink); }
 
 main { display: grid; grid-template-columns: minmax(0, 1fr) 390px; gap: 0; min-height: 0; }
-.board { position: relative; min-height: 0; border-right: 1px solid var(--rule); overflow: hidden; touch-action: none; }
+.board { position: relative; min-height: 0; border-right: 1px solid var(--rule); overflow: hidden; touch-action: none; color-scheme: light; background: var(--ground); color: var(--ink); }
 .board canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; cursor: grab; }
 .board canvas.dragging { cursor: grabbing; }
 .zoom { position: absolute; right: 10px; top: 10px; display: flex; flex-direction: column; gap: 4px; }
@@ -71,8 +73,9 @@ main { display: grid; grid-template-columns: minmax(0, 1fr) 390px; gap: 0; min-h
 .layers label { display: inline-flex; gap: 6px; align-items: center; cursor: pointer; white-space: nowrap; }
 .layers .row { grid-column: 1 / -1; display: flex; gap: 6px; margin-top: 6px; }
 .layers .row .btn { padding: 2px 8px; font-size: 12px; }
-.scale { position: absolute; left: 12px; bottom: 10px; font-family: var(--font-data); font-size: 11px; color: var(--ink-soft); }
-.scale em { font-style: normal; color: var(--east); margin-left: 8px; }
+.scale { position: absolute; left: 12px; bottom: 22px; font-family: var(--font-data); font-size: 11px; color: var(--ink-soft); }
+.tilenote { position: absolute; left: 8px; bottom: 50px; font-family: var(--font-data); font-size: 11px; color: var(--east); background: color-mix(in srgb, var(--ground) 85%, transparent); padding: 3px 8px; border-radius: 4px; }
+.tilenote:empty { display: none; }
 .scale i { display: block; height: 4px; border: 1px solid var(--ink-soft); border-top: 0; margin-bottom: 3px; }
 .legend { position: absolute; left: 12px; top: 10px; display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 12px; color: var(--ink-soft); background: color-mix(in srgb, var(--ground) 85%, transparent); padding: 4px 8px; border-radius: 4px; }
 .legend span { display: inline-flex; align-items: center; gap: 5px; }
@@ -184,9 +187,12 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
   main { grid-template-columns: 1fr; }
   .board { height: 58svh; border-right: 0; border-bottom: 1px solid var(--rule); }
   aside { height: 50svh; }
-  .transport { grid-template-columns: auto 1fr; position: sticky; bottom: 0; background: var(--ground); padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px)); }
+  .transport { grid-template-columns: auto auto 1fr auto; gap: 8px 10px; position: sticky; bottom: 0; z-index: 5; background: var(--ground); box-shadow: 0 -6px 12px -8px rgba(0,0,0,.25); padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px)); }
   .timeline { grid-column: 1 / -1; order: 3; }
   .speed { justify-self: end; }
+  .speed button { padding: 3px 4px; font-size: 11px; }
+  .clock { white-space: nowrap; font-size: 13px; }
+  .clock span { font-size: 11px; }
   .card { right: 10px; top: auto; bottom: 34px; width: min(230px, calc(100% - 20px)); }
   .load { margin-left: 0; }
 }
@@ -221,7 +227,8 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
         </button>
       </div>
       <div class="layers" id="layers" hidden></div>
-      <div class="scale" id="scale"><i></i><span></span> <em id="tilenote"></em></div>
+      <div class="scale" id="scale" hidden><i></i><span></span></div>
+      <div class="tilenote" id="tilenote"></div>
       <div class="card" id="card" hidden></div>
     </div>
 
@@ -673,7 +680,7 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
     let st = $("theme-conf");
     // In the body, after the page's own style block (which build.py also puts in the body), so it wins.
     if (!st) { st = document.createElement("style"); st.id = "theme-conf"; document.body.appendChild(st); }
-    st.textContent = ":root { " + both + " " + vars(th.light) + " }\n" +
+    st.textContent = ":root, .board { " + both + " " + vars(th.light) + " }\n" +
       "@media (prefers-color-scheme: dark) { :root:not([data-theme=\"light\"]) { " + dark + " } }\n:root[data-theme=\"dark\"] { " + dark + " }";
     if ((th.mode === "light" || th.mode === "dark") && !document.documentElement.dataset.theme) document.documentElement.dataset.theme = th.mode;
     try { themeChanged(); } catch (_) {}   // not defined yet on the first, synchronous call
@@ -773,11 +780,15 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
   }
 
   // ---------- colours ----------
-  let C = {};
+  // C is the page's colours; MC the map's, which stay light in dark mode. Map drawing swaps MC in as C.
+  let C = {}, MC = {};
   function readColors() {
-    const cs = getComputedStyle(document.documentElement);
-    for (const k of ["ground", "panel", "ink", "ink-soft", "rule", "grid", "grid-major", "accent", "west", "east", "guer", "civ", "dead", "radio", "chat"]) C[k] = cs.getPropertyValue("--" + k).trim();
+    const keys = ["ground", "panel", "ink", "ink-soft", "rule", "grid", "grid-major", "accent", "west", "east", "guer", "civ", "dead", "radio", "chat"];
+    const cs = getComputedStyle(document.documentElement), ms = getComputedStyle($("board"));
+    C = {}; MC = {};
+    for (const k of keys) { C[k] = cs.getPropertyValue("--" + k).trim(); MC[k] = ms.getPropertyValue("--" + k).trim(); }
   }
+  const withMapColors = f => { const page = C; C = MC; try { return f(); } finally { C = page; } };
   const sideColor = s => ({ WEST: C.west, EAST: C.east, GUER: C.guer, CIV: C.civ })[s] || C["ink-soft"];
   // Arma's vanilla CfgMarkerColors values, for config exports without marker_colors.
   const MARKER_RGBA = {
@@ -892,6 +903,7 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
     // scale bar
     const nice = [1, 2, 5, 10, 20, 50, 100, 200, 500, 1000, 2000, 5000, 10000];
     const m = nice.find(n => n * view.scale >= 70) || 10000;
+    $("scale").hidden = false;
     $("scale").firstElementChild.style.width = (m * view.scale) + "px";
     $("scale").querySelector("span").textContent = m >= 1000 ? m / 1000 + " km" : m + " m";
   }
@@ -1152,8 +1164,10 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
       if (st.text) {
         ctx.font = "600 12px " + font; ctx.textAlign = icon ? "left" : "center"; ctx.textBaseline = "middle";
         const x = icon ? sx + width / 2 + 4 : sx;
+        if (placeLabel(ctx, st.text, x, sy)) {
         ctx.lineWidth = 3; ctx.strokeStyle = markerOutline(st.color, st.type); ctx.strokeText(st.text, x, sy);
         ctx.fillStyle = markerColor(st.color, st.type); ctx.fillText(st.text, x, sy);
+        }
       }
       ctx.globalAlpha = 1;
     }
@@ -1171,8 +1185,10 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
   }
 
   let drawn = [];   // [id, sx, sy] for picking
-  function drawMap() {
+  function drawMap() { withMapColors(drawMapNow); }
+  function drawMapNow() {
     const ctx = mctx;
+    labelBoxes = [];
     ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
     ctx.fillStyle = C.ground; ctx.fillRect(0, 0, W, H);
     if (!rec) return;
@@ -1253,7 +1269,7 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
       drawn.push([e.id, sx, sy]);
       if (e.id === selected && s.alive) {
         ctx.fillStyle = C.ink; ctx.font = "12px " + getComputedStyle(document.body).getPropertyValue("--font-ui");
-        ctx.textAlign = "left"; ctx.textBaseline = "middle"; ctx.fillText(nameAt(e, t), sx + 10, sy - 9);
+        ctx.textAlign = "left"; ctx.textBaseline = "middle"; placeLabel(ctx, nameAt(e, t), sx + 10, sy - 9, true); ctx.fillText(nameAt(e, t), sx + 10, sy - 9);
       }
     }
 
@@ -1276,9 +1292,23 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
 
   // ---------- group markers and map events ----------
   const MODE_SHORT = { SAFE: "SAFE", AWARE: "AWARE", COMBAT: "COMBAT", STEALTH: "STEALTH", CARELESS: "CARELESS" };
+  // Screen boxes of the labels drawn this frame, in drawing order: markers, the selected unit, group
+  // markers, then event labels. A later label that would overlap an earlier one is left out.
+  let labelBoxes = [];
+  function placeLabel(ctx, text, x, y, force) {
+    const w = ctx.measureText(text).width, h = 14;
+    const left = ctx.textAlign === "center" ? x - w / 2 : ctx.textAlign === "right" || ctx.textAlign === "end" ? x - w : x;
+    const top = ctx.textBaseline === "top" ? y : ctx.textBaseline === "bottom" ? y - h : y - h / 2;
+    const box = [left - 2, top - 1, left + w + 2, top + h + 1];
+    if (!force && labelBoxes.some(b => box[0] < b[2] && box[2] > b[0] && box[1] < b[3] && box[3] > b[1])) return false;
+    labelBoxes.push(box);
+    return true;
+  }
   function halo(ctx, text, x, y, color) {
+    if (!placeLabel(ctx, text, x, y)) return false;
     ctx.lineWidth = 3; ctx.strokeStyle = C.ground; ctx.strokeText(text, x, y);
     ctx.fillStyle = color || C.ink; ctx.fillText(text, x, y);
+    return true;
   }
   // ---------- TMF group markers ----------
   // Same rules as TMF's ORBAT tracker (addons/orbat/functions/fnc_updateArray.sqf, fnc_drawArrayRec.sqf):
@@ -1930,7 +1960,7 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
     const loadoutFactionName = loadout ? loadout[2] : e.loadouts.length ? "" : e.loadout_faction_name;
     const roleName = roleNameAt(e, t);
     // Vehicle pictures are white silhouettes, so drawn in the ink colour to show on either theme.
-    const pic = tinted(vehicleRow(e)[1], C.ink);
+    const pic = tinted(vehicleRow(e)[1], MC.ink);
     let picUrl = ""; try { picUrl = pic ? pic.toDataURL() : ""; } catch (_) {}
     card.innerHTML = (picUrl ? '<img class="pic" alt="" src="' + picUrl + '">' : "") + '<h2 class="s-' + esc(sideAt(e, t)) + '">' + esc(nameAt(e, t)) + '</h2><div class="tag">' + esc(e.display) + " · " + esc(e.cls) + "</div><dl>" +
       "<dt>Status</dt><dd>" + (!s ? "not present" : s.alive ? (down ? "unconscious, " : "alive, ") + Math.round(s.dmg * 100) + "% damage" : "dead") + "</dd>" +
