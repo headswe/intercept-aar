@@ -85,9 +85,11 @@ main { display: grid; grid-template-columns: minmax(0, 1fr) 390px; gap: 0; min-h
 .tilenote { position: absolute; left: 8px; bottom: 50px; font-family: var(--font-data); font-size: 11px; color: var(--east); background: color-mix(in srgb, var(--ground) 85%, transparent); padding: 3px 8px; border-radius: 4px; }
 .tilenote:empty { display: none; }
 .scale i { display: block; height: 4px; border: 1px solid var(--ink-soft); border-top: 0; margin-bottom: 3px; }
-.legend { position: absolute; left: 12px; top: 10px; display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 12px; color: var(--ink-soft); background: color-mix(in srgb, var(--ground) 85%, transparent); padding: 4px 8px; border-radius: 4px; }
+.legend { position: absolute; left: 12px; top: 10px; max-width: calc(100% - 72px); display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 12px; color: var(--ink-soft); background: color-mix(in srgb, var(--ground) 85%, transparent); padding: 4px 8px; border-radius: 4px; }
 .legend span { display: inline-flex; align-items: center; gap: 5px; }
 .legend i { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
+.legend svg { flex: none; }
+.legend .keytoggle { display: none; border: 0; background: none; padding: 0; font-size: 12px; color: var(--ink); text-decoration: underline; }
 
 .card { position: absolute; right: 52px; top: 10px; width: 230px; background: var(--panel); border: 1px solid var(--rule); border-radius: 6px; padding: 10px 12px; font-size: 13px; box-shadow: 0 6px 18px rgba(0,0,0,.12); }
 .card .pic { display: block; max-width: 100%; max-height: 72px; margin: 0 0 6px; }
@@ -199,6 +201,8 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
   .timeline { grid-column: 1 / -1; order: 3; }
   .speed { justify-self: end; }
   .speed button { padding: 3px 4px; font-size: 11px; }
+  .legend .keytoggle { display: inline; }
+  .legend:not(.open) .key { display: none; }
   .clock { white-space: nowrap; font-size: 13px; }
   .clock span { font-size: 11px; }
   .card { right: 10px; top: auto; bottom: 34px; width: min(230px, calc(100% - 20px)); }
@@ -916,10 +920,12 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
     $("scale").querySelector("span").textContent = m >= 1000 ? m / 1000 + " km" : m + " m";
   }
 
+  const DEAD_ALPHA = 0.5;   // dead units and wrecks are drawn faded, under everything else
   function drawUnit(ctx, sx, sy, dir, col, alive, isPlayer, sel, down = false, letter = "", icon = null) {
     if (!alive) {
       ctx.strokeStyle = C.dead; ctx.lineWidth = 1.6; ctx.beginPath();
       ctx.moveTo(sx - 4, sy - 4); ctx.lineTo(sx + 4, sy + 4); ctx.moveTo(sx + 4, sy - 4); ctx.lineTo(sx - 4, sy + 4); ctx.stroke();
+      if (sel) { const a = ctx.globalAlpha; ctx.globalAlpha = 1; ctx.strokeStyle = C.accent; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(sx, sy, 10, 0, Math.PI * 2); ctx.stroke(); ctx.globalAlpha = a; }
       return;
     }
     // The game's map icon, once zoomed in (about 1 px per metre), in place of the dot.
@@ -1206,6 +1212,25 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
     if (layers.markers) drawMarkerAreas(ctx);
     if (layers.coverMap) drawCoverMaps(ctx);
 
+    // Everything present now. The dead go first, faded, so the living and the markers draw over them.
+    drawn = [];
+    const crew = new Map();
+    const states = [];
+    for (const e of rec.entities.values()) {
+      const s = stateAt(e, t); if (!s) continue;
+      states.push([e, s]);
+      if (e.kind === "unit" && s.veh && s.alive) crew.set(s.veh, (crew.get(s.veh) || 0) + 1);
+    }
+    ctx.globalAlpha = DEAD_ALPHA;
+    for (const [e, s] of states) {
+      if (s.alive || !layers[e.kind === "unit" ? "units" : "vehicles"]) continue;
+      const [sx, sy] = toScreen(s.x, s.y);
+      if (e.kind === "unit") drawUnit(ctx, sx, sy, s.dir, C.dead, false, false, e.id === selected);
+      else drawVehicle(ctx, sx, sy, s.dir, C.dead, false, 0, e.id === selected, e.kind, tinted(iconPath(e), C.dead));
+      drawn.push([e.id, sx, sy]);
+    }
+    ctx.globalAlpha = 1;
+
     // kill sites
     if (layers.hits) for (const k of rec.kills) {
       if (k.t > t || !k.pos) continue;
@@ -1252,24 +1277,16 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
       ctx.globalAlpha = 1;
     }
 
-    // entities: vehicles first, then units on foot
-    drawn = [];
-    const crew = new Map();
-    const states = [];
-    for (const e of rec.entities.values()) {
-      const s = stateAt(e, t); if (!s) continue;
-      states.push([e, s]);
-      if (e.kind === "unit" && s.veh && s.alive) crew.set(s.veh, (crew.get(s.veh) || 0) + 1);
-    }
+    // living entities: vehicles first, then units on foot
     for (const [e, s] of states) {
-      if (e.kind === "unit" || !layers.vehicles) continue;
+      if (e.kind === "unit" || !s.alive || !layers.vehicles) continue;
       const [sx, sy] = toScreen(s.x, s.y);
       const col = sideColor(sideAt(e, t));
       drawVehicle(ctx, sx, sy, s.dir, col, s.alive, crew.get(e.id) || 0, e.id === selected, e.kind, tinted(iconPath(e), s.alive ? col : C.dead));
       drawn.push([e.id, sx, sy]);
     }
     for (const [e, s] of states) {
-      if (e.kind !== "unit" || (s.veh && s.alive) || !layers.units) continue;
+      if (e.kind !== "unit" || !s.alive || s.veh || !layers.units) continue;
       const [sx, sy] = toScreen(s.x, s.y);
       const isP = isPlayerAt(e, t);
       const col = sideColor(sideAt(e, t));
@@ -2131,6 +2148,7 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
   }
   function setLayer(k, on) {
     layers[k] = on;
+    renderLegend();
     prefs.layers = Object.fromEntries(LAYERS.filter(([x]) => !layers[x]).map(([x]) => [x, false]));
     savePrefs();
   }
@@ -2356,11 +2374,50 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
       "<span>" + fmt(rec.duration) + "</span>" +
       "<span>" + rec.entities.size + " entities" + (players.size ? ", " + players.size + (players.size > 1 ? " players" : " player") : "") + "</span>" +
       "<span>" + rec.shots.size + " shots</span><span>" + rec.kills.length + " kills</span>";
-    const sides = new Set([...rec.entities.values()].map(e => e.side));
-    $("legend").innerHTML = [...sides].filter(s => ["WEST", "EAST", "GUER", "CIV"].includes(s)).sort().map(s =>
-      '<span><i style="background:var(--' + ({ WEST: "west", EAST: "east", GUER: "guer", CIV: "civ" })[s] + ')"></i>' + sideName(s) + "</span>").join("") +
-      '<span><i style="background:var(--accent);border-radius:0;height:2px"></i>Tracer</span>' +
-      (rec.tx.length ? '<span><i style="background:var(--radio)"></i>On the radio</span>' : "");
+    renderLegend();
+  }
+  // The map's legend: an entry for each kind of mark this recording has and the layers show.
+  const LEGEND_ICONS = {
+    player: '<circle cx="7" cy="7" r="3.5" fill="var(--ink-soft)"/><circle cx="7" cy="7" r="6" fill="none" stroke="var(--ink)" stroke-width="1.5"/>',
+    down: '<circle cx="7" cy="7" r="3.5" fill="var(--ink-soft)" opacity=".45"/><circle cx="7" cy="7" r="6" fill="none" stroke="var(--ink-soft)" stroke-width="1.5" stroke-dasharray="2 2"/>',
+    dead: '<path d="M3.5 3.5l7 7M10.5 3.5l-7 7" stroke="var(--dead)" stroke-width="1.6" opacity=".6"/>',
+    group: '<rect x="1.5" y="3" width="11" height="8" fill="none" stroke="var(--ink)" stroke-width="1.3"/><path d="M1.5 3l11 8M12.5 3l-11 8" stroke="var(--ink)" stroke-width="1"/>',
+    kill: '<circle cx="7" cy="7" r="5" fill="none" stroke="var(--east)" stroke-width="2"/>',
+    tracer: '<path d="M1 10L13 4" stroke="var(--accent)" stroke-width="1.6" stroke-linecap="round"/>',
+    radio: '<path d="M2.5 6a6 6 0 0 1 9 0M4.5 8.5a3 3 0 0 1 5 0" fill="none" stroke="var(--radio)" stroke-width="1.6" stroke-linecap="round"/>',
+    chat: '<path d="M1.5 2.5h11v7h-6l-3 2.5v-2.5h-2z" fill="none" stroke="var(--chat)" stroke-width="1.3" stroke-linejoin="round"/>',
+    spot: '<path d="M1 11L13 3" stroke="var(--ink-soft)" stroke-width="1.3" stroke-dasharray="3 2"/>',
+    building: '<rect x="2.5" y="2.5" width="9" height="9" fill="none" stroke="var(--dead)" stroke-width="1.4"/><path d="M2.5 2.5l9 9" stroke="var(--dead)" stroke-width="1.4"/>',
+    cover: '<rect x="0" y="0" width="14" height="14" fill="#000" opacity=".35"/><rect x="3" y="3" width="8" height="8" fill="var(--ground)" stroke="var(--ink)" stroke-width="1.2" stroke-dasharray="3 2"/>',
+  };
+  $("legend").addEventListener("click", e => {
+    if (!e.target.closest(".keytoggle")) return;
+    $("legend").classList.toggle("open");
+    e.target.setAttribute("aria-expanded", $("legend").classList.contains("open"));
+  });
+  function renderLegend() {
+    if (!rec) { $("legend").innerHTML = ""; return; }
+    const ents = [...rec.entities.values()];
+    const has = { units: ents.some(e => e.kind === "unit"), vehicles: ents.some(e => e.kind !== "unit") };
+    const item = (icon, label) => '<span class="key"><svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true">' + LEGEND_ICONS[icon] + "</svg>" + label + "</span>";
+    const sides = new Set(ents.filter(e => (e.kind === "unit" ? layers.units : layers.vehicles)).map(e => e.side));
+    let html = [...sides].filter(s => ["WEST", "EAST", "GUER", "CIV"].includes(s)).sort().map(s =>
+      '<span><i style="background:var(--' + ({ WEST: "west", EAST: "east", GUER: "guer", CIV: "civ" })[s] + ')"></i>' + sideName(s) + "</span>").join("");
+    if (layers.units && ents.some(e => e.kind === "unit" && (e.player || e.players.length))) html += item("player", "Player");
+    if (layers.units && ents.some(e => e.downs.length)) html += item("down", "Unconscious");
+    if ((layers.units && has.units) || (layers.vehicles && has.vehicles)) html += item("dead", "Dead");
+    if (layers.groups && (rec.orbat || rec.groupIcon.size || ents.some(e => e.kind === "unit" && e.group))) html += item("group", "Group");
+    if (layers.hits && rec.kills.length) html += item("kill", "Killed here");
+    if (layers.tracers && rec.shotList.length) html += item("tracer", "Tracer");
+    if (layers.radio && rec.tx.length) html += item("radio", "On the radio");
+    if (layers.chat && rec.chat.length) html += item("chat", "Chat");
+    if (layers.detections && rec.detections.length) html += item("spot", "AI spotted");
+    if (layers.buildings && rec.buildings.length) html += item("building", "Destroyed building");
+    if (layers.coverMap && rec.coverMaps.size) html += item("cover", "Cover map");
+    // On a phone only the sides show until the key is opened.
+    if (html.includes('class="key"')) html += '<button class="keytoggle" type="button" aria-expanded="' + $("legend").classList.contains("open") + '">Key</button>';
+    $("legend").innerHTML = html;
+    $("legend").hidden = !html;
   }
 
   function load(text, label) {
