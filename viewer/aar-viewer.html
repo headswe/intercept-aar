@@ -693,11 +693,11 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
   // tools/export_icons.py) the textures as PNG (aar-icons.json, which lists PNG files beside it or
   // holds them as data URIs). They are opened like a recording, or found next to the page or in aar/
   // when served over http, and kept in IndexedDB for next time.
-  const game = { vehicles: {}, weapons: {}, factions: {}, vehicle_icons: {}, marker_icons: {}, marker_defaults: {}, icons: {}, images: new Map(), tinted: new Map() };
+  const game = { vehicles: {}, weapons: {}, factions: {}, vehicle_icons: {}, marker_icons: {}, marker_defaults: {}, marker_colors: {}, icons: {}, images: new Map(), tinted: new Map() };
   const texKey = p => { p = lc(p).replace(/\//g, "\\").replace(/^\\+/, ""); return p && !/\.[^\\]*$/.test(p) ? p + ".paa" : p; };
   function applyGame(pack) {
     const low = o => Object.fromEntries(Object.entries(o || {}).map(([k, v]) => [lc(k), v]));
-    if (pack.format === "aar-cfg") for (const k of ["vehicles", "weapons", "factions", "vehicle_icons", "marker_icons", "marker_defaults"]) game[k] = low(pack[k]);
+    if (pack.format === "aar-cfg") for (const k of ["vehicles", "weapons", "factions", "vehicle_icons", "marker_icons", "marker_defaults", "marker_colors"]) game[k] = low(pack[k]);
     else if (pack.format === "aar-icons") { Object.assign(game.icons, pack.icons || {}); game.images.clear(); game.tinted.clear(); }
     else return false;
     cardKey = ""; feedKey = "";
@@ -787,7 +787,7 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
     for (const k of ["ground", "panel", "ink", "ink-soft", "rule", "grid", "grid-major", "accent", "west", "east", "guer", "civ", "dead", "radio", "chat"]) C[k] = cs.getPropertyValue("--" + k).trim();
   }
   const sideColor = s => ({ WEST: C.west, EAST: C.east, GUER: C.guer, CIV: C.civ })[s] || C["ink-soft"];
-  // Arma CfgMarkerColors values read from the running game config.
+  // Arma's vanilla CfgMarkerColors values, for config exports without marker_colors.
   const MARKER_RGBA = {
     default: [0, 0, 0, 1], colorblack: [0, 0, 0, 1], colorgrey: [.5, .5, .5, 1],
     colorred: [.9, 0, 0, 1], colorbrown: [.5, .25, 0, 1], colororange: [.85, .4, 0, 1],
@@ -800,16 +800,30 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
     color3_fd_f: [.941176, .509804, .192157, 1], color4_fd_f: [.403922, .545098, .607843, 1],
     color5_fd_f: [.690196, .25098, .654902, 1], color6_fd_f: [.352941, .34902, .352941, 1]
   };
-  const markerColor = (c, type) => {
+  const validRGBA = v => Array.isArray(v) && v.length >= 3 && v.slice(0, 4).every(x => typeof x === "number" && Number.isFinite(x));
+  // [r, g, b, a] in 0-1 for a marker colour class, or null when neither the export nor Arma's own list knows it.
+  const markerRGBA = (c, type) => {
     const key = lc(c), marker = lc(type);
     const markerDefault = game.marker_defaults[marker];
+    if (key === "default" && markerDefault && validRGBA(markerDefault[0])) return markerDefault[0];
     const faction = marker.match(/^([obnc])_/);
     const factionColor = key === "default" && faction && ({ o: "coloropfor", b: "colorblufor", n: "colorguer", c: "colorciv" })[faction[1]];
-    const rgba = key === "default" && markerDefault && Array.isArray(markerDefault[0]) ? markerDefault[0] : MARKER_RGBA[factionColor || key];
-    if (!rgba || rgba.length < 3 || rgba.slice(0, 4).some(v => typeof v !== "number" || !Number.isFinite(v))) return "#b39900";
-    const channel = i => Math.round(Math.max(0, Math.min(1, rgba[i])) * 255);
-    const alpha = rgba.length > 3 ? Math.max(0, Math.min(1, rgba[3])) : 1;
-    return "rgba(" + channel(0) + "," + channel(1) + "," + channel(2) + "," + alpha + ")";
+    const rgba = game.marker_colors[factionColor || key] || MARKER_RGBA[factionColor || key];
+    return validRGBA(rgba) ? rgba : null;
+  };
+  const clamp01 = v => Math.max(0, Math.min(1, v));
+  const markerColor = (c, type) => {
+    const rgba = markerRGBA(c, type);
+    if (!rgba) return C["ink-soft"];
+    const channel = i => Math.round(clamp01(rgba[i]) * 255);
+    return "rgba(" + channel(0) + "," + channel(1) + "," + channel(2) + "," + (rgba.length > 3 ? clamp01(rgba[3]) : 1) + ")";
+  };
+  // Outline for marker text: light behind dark colours and dark behind light ones, so labels read on either theme.
+  const markerOutline = (c, type) => {
+    const rgba = markerRGBA(c, type);
+    if (!rgba) return C.ground;
+    const lum = .2126 * clamp01(rgba[0]) + .7152 * clamp01(rgba[1]) + .0722 * clamp01(rgba[2]);
+    return lum < .5 ? "rgba(255,255,255,.85)" : "rgba(0,0,0,.85)";
   };
   const sideName = s => ({ WEST: "BLUFOR", EAST: "OPFOR", GUER: "Independent", CIV: "Civilian" })[s] || s;
   // Arma chat channel numbers; 6-15 are the mission's custom channels.
@@ -1089,7 +1103,7 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
       const st = markerAt(m, t); if (!st) continue;
       const col = markerColor(st.color, st.type);
       if (st.shape === "POLYLINE" && Array.isArray(st.line) && st.line.length >= 4) {
-        ctx.globalAlpha = st.alpha; ctx.strokeStyle = col; ctx.lineWidth = Math.max(1, (st.size && st.size[0]) || 1); ctx.lineJoin = ctx.lineCap = "round";
+        ctx.globalAlpha = st.alpha; ctx.strokeStyle = col; ctx.lineWidth = Math.max(2, (st.size && st.size[0]) || 0); ctx.lineJoin = ctx.lineCap = "round";
         ctx.beginPath();
         for (let i = 0; i + 1 < st.line.length; i += 2) { const [x, y] = toScreen(st.line[i], st.line[i + 1]); i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); }
         ctx.stroke(); ctx.globalAlpha = 1; continue;
@@ -1146,7 +1160,7 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
       if (st.text) {
         ctx.font = "600 12px " + font; ctx.textAlign = icon ? "left" : "center"; ctx.textBaseline = "middle";
         const x = icon ? sx + width / 2 + 4 : sx;
-        ctx.lineWidth = 3; ctx.strokeStyle = C.ground; ctx.strokeText(st.text, x, sy);
+        ctx.lineWidth = 3; ctx.strokeStyle = markerOutline(st.color, st.type); ctx.strokeText(st.text, x, sy);
         ctx.fillStyle = markerColor(st.color, st.type); ctx.fillText(st.text, x, sy);
       }
       ctx.globalAlpha = 1;
