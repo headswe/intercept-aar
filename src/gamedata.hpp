@@ -562,6 +562,85 @@ inline std::string_view json_members(std::string_view obj) {
     return obj;
 }
 
+// ---------- finding the mods ----------
+
+namespace detail {
+
+inline std::string lower(std::string_view s) {
+    std::string out;
+    for (char c : s) out += (c >= 'A' && c <= 'Z') ? char(c - 'A' + 'a') : c;
+    return out;
+}
+
+inline std::string unquote(std::string s) {
+    while (!s.empty() && (s.back() == '\r' || s.back() == ' ' || s.back() == '\t')) s.pop_back();
+    size_t start = s.find_first_not_of(" \t");
+    s = start == std::string::npos ? "" : s.substr(start);
+    if (s.size() >= 2 && s.front() == '"' && s.back() == '"') s = s.substr(1, s.size() - 2);
+    return s;
+}
+
+}  // namespace detail
+
+// The mod folders on the game's command line: -mod= and -serverMod= (";"-separated, any case), also
+// inside a -par= parameter file. getLoadedModsInfo gives only a mod's folder name, which on a
+// server with its mods in a subfolder (-mod=mods/@ace) does not lead to the files.
+inline std::vector<std::string> mod_args(const std::vector<std::string>& args, const std::filesystem::path& game, int depth = 0) {
+    std::vector<std::string> out;
+    for (const std::string& raw : args) {
+        std::string arg = detail::unquote(raw);
+        if (arg.empty() || (arg[0] != '-' && arg[0] != '/')) continue;
+        size_t eq = arg.find('=');
+        if (eq == std::string::npos) continue;
+        std::string key = detail::lower(arg.substr(1, eq - 1));
+        std::string value = detail::unquote(arg.substr(eq + 1));
+        if (key == "mod" || key == "servermod") {
+            for (size_t i = 0; i <= value.size();) {
+                size_t semi = value.find(';', i);
+                if (semi == std::string::npos) semi = value.size();
+                std::string m = detail::unquote(value.substr(i, semi - i));
+                if (!m.empty()) out.push_back(m);
+                i = semi + 1;
+            }
+        } else if (key == "par" && depth == 0) {
+            std::filesystem::path file(value);
+            if (!file.is_absolute()) file = game / file;
+            std::ifstream f(file);
+            std::vector<std::string> lines;
+            for (std::string line; std::getline(f, line);) lines.push_back(line);
+            for (std::string& m : mod_args(lines, game, 1)) out.push_back(std::move(m));
+        }
+    }
+    return out;
+}
+
+// Folders named like the mods (any case) up to `depth` levels below `root`, for mods whose folder
+// is known only by name.
+inline std::vector<std::filesystem::path> find_mod_dirs(const std::filesystem::path& root, const std::vector<std::string>& names, int depth = 3) {
+    namespace fs = std::filesystem;
+    std::vector<fs::path> out;
+    std::map<std::string, bool> wanted;
+    for (const std::string& n : names) {
+        std::string leaf = fs::path(n).filename().string();
+        if (!leaf.empty()) wanted[detail::lower(leaf)] = true;
+    }
+    if (wanted.empty()) return out;
+    std::error_code ec;
+    for (fs::recursive_directory_iterator it(root, fs::directory_options::follow_directory_symlink | fs::directory_options::skip_permission_denied, ec), end;
+         it != end; it.increment(ec)) {
+        if (ec) break;
+        if (!it->is_directory(ec)) continue;
+        std::string name = detail::lower(it->path().filename().string());
+        if (wanted.count(name)) {
+            out.push_back(it->path());
+            it.disable_recursion_pending();
+        } else if (it.depth() + 1 >= depth || name == "addons" || name == "aar") {
+            it.disable_recursion_pending();
+        }
+    }
+    return out;
+}
+
 // ---------- the export ----------
 
 struct job {
@@ -597,9 +676,14 @@ inline std::string run(const job& j) {
 
     std::map<std::string, pbo_entry> index;
     size_t pbos = 0;
+    std::map<std::string, bool> searched;
     for (const fs::path& root : j.search) {
         std::error_code ec;
         if (!fs::is_directory(root, ec)) continue;
+        // A folder (or one inside it) already searched adds nothing.
+        std::string canon = fs::weakly_canonical(root, ec).string();
+        if (searched.count(canon)) continue;
+        searched[canon] = true;
         for (fs::recursive_directory_iterator it(root, fs::directory_options::follow_directory_symlink | fs::directory_options::skip_permission_denied, ec), end;
              it != end; it.increment(ec)) {
             if (ec) break;

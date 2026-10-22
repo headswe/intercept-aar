@@ -32,6 +32,10 @@
 #include "sqf_json.hpp"
 
 #ifdef _WIN32
+#define WIN32_LEAN_AND_MEAN
+#define NOMINMAX
+#include <windows.h>
+#include <shellapi.h>
 #define AAR_EXPORT __declspec(dllexport)
 #define AAR_CALL __stdcall
 #else
@@ -129,6 +133,27 @@ int open_file(char* output, unsigned int size, const char** argv, unsigned int a
 
 // ---------- game data ----------
 
+// The game's own command line, for its -mod= and -serverMod= folders.
+std::vector<std::string> command_line() {
+    std::vector<std::string> args;
+#ifdef _WIN32
+    int n = 0;
+    LPWSTR* wargv = CommandLineToArgvW(GetCommandLineW(), &n);
+    if (!wargv) return args;
+    for (int i = 0; i < n; ++i) {
+        int len = WideCharToMultiByte(CP_UTF8, 0, wargv[i], -1, nullptr, 0, nullptr, nullptr);
+        std::string a(len > 0 ? size_t(len - 1) : 0, '\0');
+        if (len > 1) WideCharToMultiByte(CP_UTF8, 0, wargv[i], -1, a.data(), len, nullptr, nullptr);
+        args.push_back(std::move(a));
+    }
+    LocalFree(wargv);
+#else
+    std::ifstream f("/proc/self/cmdline", std::ios::binary);
+    for (std::string a; std::getline(f, a, '\0');) args.push_back(a);
+#endif
+    return args;
+}
+
 // The export being collected on the game thread, then handed to a detached thread that owns it.
 // Never destroyed, like the writer.
 aar::gamedata::job& gd_job() {
@@ -170,19 +195,23 @@ int gamedata(std::string_view fn, char* output, unsigned int size, const char** 
         }
         j.header = arg(0);
         j.textures = aar::gamedata::json_strings(arg(1));
-        // The game's own PBOs, then each loaded mod's folder (relative ones are under the game folder).
+        // The game's own PBOs, then the mod folders on the command line (-mod=mods/@ace), then the
+        // loaded mods' folders: getLoadedModsInfo names only the folder ("@ace"), so one not directly
+        // under the game folder is looked for by name a few levels down, then any extra folders.
         std::error_code ec;
         fs::path game = fs::current_path(ec);
+        auto resolve = [&](const std::string& m) { fs::path p = fs::u8path(m); return p.is_absolute() ? p : game / p; };
         j.search.push_back(game / "Addons");
+        for (const std::string& m : aar::gamedata::mod_args(command_line(), game)) j.search.push_back(resolve(m));
+        std::vector<std::string> by_name;
         for (const std::string& m : aar::gamedata::json_strings(arg(2))) {
             if (m.empty()) continue;
-            fs::path p(m);
-            j.search.push_back(p.is_absolute() ? p : game / p);
+            if (fs::is_directory(resolve(m), ec)) j.search.push_back(resolve(m));
+            else by_name.push_back(m);
         }
+        for (const fs::path& p : aar::gamedata::find_mod_dirs(game, by_name)) j.search.push_back(p);
         for (const std::string& extra : aar::gamedata::json_strings(arg(3))) {
-            if (extra.empty()) continue;
-            fs::path p(extra);
-            j.search.push_back(p.is_absolute() ? p : game / p);
+            if (!extra.empty()) j.search.push_back(resolve(extra));
         }
         gd_busy = true;
         std::thread([j = std::move(j)]() {

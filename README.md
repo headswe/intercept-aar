@@ -139,6 +139,8 @@ The recorder reads the names from the config and hands them to the extension, wh
 
 When it is done it logs `[AAR] game data export: ... PNGs written ...` to the RPT. Serve the `aar` folder with the viewer and it uses all of it.
 
+The extension finds the PBOs in the game's `Addons` folder, in the folders on the server's command line (`-mod=` and `-serverMod=`, also inside a `-par=` file), and in each loaded mod's folder; a mod known only by its folder name (`@ace`) is looked for up to three levels below the game folder. Mods somewhere else can be named: `[["/srv/arma/workshop"]] spawn aar_fnc_gameData`. If the RPT line shows few PBOs searched or many textures not found, the mods were not where it looked.
+
 The same files can be made by hand on a PC with the game, for a viewer that is not served from the server (the hand-made `aar-icons.json` holds the PNGs itself, so it also works when opened from disk):
 
 1. **Names:** start the editor with the server's mods, open the debug console (Tools > Debug Console), paste `tools/export_cfg.sqf`, press **Local Exec**, and paste the clipboard into a file named `aar-cfg.json`.

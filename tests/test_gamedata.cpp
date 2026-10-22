@@ -147,6 +147,21 @@ int main(int argc, char** argv) {
     CHECK(png_data == png(img_white));
     fs::remove_all(dir);
 
+    // Mod folders from the command line, a -par file and by name.
+    {
+        fs::path game = fs::temp_directory_path() / "aar_mods_test";
+        fs::remove_all(game);
+        fs::create_directories(game / "mods" / "@CBA_A3" / "addons");
+        fs::create_directories(game / "serverMods" / "@arma_aar" / "addons");
+        fs::create_directories(game / "Addons" / "@decoy");
+        std::ofstream(game / "server.par") << "-serverMod=\"serverMods/@arma_aar\"\r\n-port=2302\n";
+        std::vector<std::string> args = {"./arma3server_x64", "-MOD=mods/@ace;mods/@CBA_A3;", "-par=server.par", "-name=x"};
+        CHECK((mod_args(args, game) == std::vector<std::string>{"mods/@ace", "mods/@CBA_A3", "serverMods/@arma_aar"}));
+        std::vector<fs::path> found = find_mod_dirs(game, {"@cba_a3", "@arma_aar", "@decoy", "@missing"});
+        CHECK(found.size() == 2);
+        fs::remove_all(game);
+    }
+
     if (failures) std::printf("%d failure(s)\n", failures);
     else std::printf("all game data tests passed\n");
     return failures ? 1 : 0;
