@@ -4,7 +4,9 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=IBM+Plex+Sans+Condensed:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
 <style>
 /* Layout: a map table. Plotting board fills the screen, a side ledger lists events and units, and a transport strip along the bottom carries the timeline. */
-:root {
+/* The map (.board) keeps the light paper colours in dark mode too: Arma's marker colours and the
+   map tiles are made for a light map, so only the panels and controls around it go dark. */
+:root, .board {
   --ground: #e9ebe2;      /* map paper */
   --panel: #f6f7f2;
   --ink: #1d221c;
@@ -60,7 +62,7 @@ h1 { font-family: var(--font-display); font-weight: 700; font-size: 1.5rem; lett
 .btn.primary { background: var(--ink); color: var(--ground); border-color: var(--ink); }
 
 main { display: grid; grid-template-columns: minmax(0, 1fr) 390px; gap: 0; min-height: 0; }
-.board { position: relative; min-height: 0; border-right: 1px solid var(--rule); overflow: hidden; touch-action: none; }
+.board { position: relative; min-height: 0; border-right: 1px solid var(--rule); overflow: hidden; touch-action: none; color-scheme: light; background: var(--ground); color: var(--ink); }
 .board canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; cursor: grab; }
 .board canvas.dragging { cursor: grabbing; }
 .zoom { position: absolute; right: 10px; top: 10px; display: flex; flex-direction: column; gap: 4px; }
@@ -71,14 +73,35 @@ main { display: grid; grid-template-columns: minmax(0, 1fr) 390px; gap: 0; min-h
 .layers label { display: inline-flex; gap: 6px; align-items: center; cursor: pointer; white-space: nowrap; }
 .layers .row { grid-column: 1 / -1; display: flex; gap: 6px; margin-top: 6px; }
 .layers .row .btn { padding: 2px 8px; font-size: 12px; }
-.scale { position: absolute; left: 12px; bottom: 10px; font-family: var(--font-data); font-size: 11px; color: var(--ink-soft); }
-.scale em { font-style: normal; color: var(--east); margin-left: 8px; }
+.scale { font-family: var(--font-data); font-size: 11px; color: var(--ink-soft); }
+.tilenote { font-family: var(--font-data); font-size: 11px; color: var(--east); background: color-mix(in srgb, var(--ground) 85%, transparent); padding: 3px 8px; border-radius: 4px; }
+.tilenote:empty { display: none; }
 .scale i { display: block; height: 4px; border: 1px solid var(--ink-soft); border-top: 0; margin-bottom: 3px; }
-.legend { position: absolute; left: 12px; top: 10px; display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 12px; color: var(--ink-soft); background: color-mix(in srgb, var(--ground) 85%, transparent); padding: 4px 8px; border-radius: 4px; }
+/* Along the bottom of the map, clear of the grid numbers: the tile notice, the scale bar and the key,
+   a solid strip so what it covers is hidden, not washed out. */
+.mapbottom { position: absolute; left: 12px; right: 52px; bottom: 22px; display: grid; justify-items: start; gap: 6px; pointer-events: none; }
+.mapbottom > * { pointer-events: auto; }
+.legend { display: flex; flex-wrap: wrap; align-items: center; gap: 3px 14px; font-size: 12px; color: var(--ink-soft); background: var(--panel); border: 1px solid var(--rule); border-radius: 6px; padding: 5px 10px; }
 .legend span { display: inline-flex; align-items: center; gap: 5px; }
 .legend i { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
+.legend svg { flex: none; }
+.legend:not(.open) .key { display: none; }
 
 .card { position: absolute; right: 52px; top: 10px; width: 230px; background: var(--panel); border: 1px solid var(--rule); border-radius: 6px; padding: 10px 12px; font-size: 13px; box-shadow: 0 6px 18px rgba(0,0,0,.12); }
+/* Before a recording is open only the map shows, with a drop zone in the middle. */
+.app.waiting main { grid-template-columns: minmax(0, 1fr); }
+.app.waiting aside, .app.waiting .transport, .app.waiting .zoom, .app.waiting .mapbottom, .app.waiting .facts { display: none !important; }
+.app.waiting .board { border-right: 0; }
+.app:not(.waiting) .dropzone { display: none; }
+.dropzone { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: min(440px, calc(100% - 32px)); border: 2px dashed var(--rule); border-radius: 8px; padding: 26px 22px; text-align: center; display: grid; gap: 10px; justify-items: center; background: color-mix(in srgb, var(--ground) 90%, transparent); }
+.dropzone strong { font-family: var(--font-display); font-weight: 700; font-size: 1.6rem; letter-spacing: .03em; text-transform: uppercase; }
+.dropzone span { color: var(--ink-soft); font-size: 13px; }
+.dropzone code { font-family: var(--font-data); font-size: 12px; color: var(--ink); }
+.dropzone .row { display: flex; gap: 6px; flex-wrap: wrap; justify-content: center; }
+/* Mission facts: a small card at the top left. */
+.facts { position: absolute; left: 12px; top: 10px; margin: 0; display: grid; grid-template-columns: auto auto; gap: 1px 10px; background: var(--panel); border: 1px solid var(--rule); border-radius: 6px; padding: 6px 10px; font-size: 12px; }
+.facts dt { font-family: var(--font-display); font-weight: 600; font-size: 11px; letter-spacing: .1em; text-transform: uppercase; color: var(--ink-soft); align-self: center; }
+.facts dd { margin: 0; font-family: var(--font-data); font-variant-numeric: tabular-nums; text-align: right; }
 .card .pic { display: block; max-width: 100%; max-height: 72px; margin: 0 0 6px; }
 .card h2 { font-family: var(--font-display); font-size: 1.15rem; font-weight: 600; margin: 0 0 2px; text-wrap: balance; }
 .card dl { display: grid; grid-template-columns: auto 1fr; gap: 2px 10px; margin: 8px 0; font-size: 12px; }
@@ -92,10 +115,20 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
 .tabs button { flex: 1; background: none; border: 0; padding: 9px 0 8px; font-family: var(--font-display); font-weight: 600; font-size: 14px; letter-spacing: .05em; text-transform: uppercase; color: var(--ink-soft); border-bottom: 2px solid transparent; }
 .tabs button[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--accent); }
 .pane { overflow-y: auto; min-height: 0; }
-.filters { display: flex; flex-wrap: wrap; gap: 4px 10px; padding: 8px 12px; border-bottom: 1px solid var(--rule); font-size: 12px; color: var(--ink-soft); position: sticky; top: 0; background: var(--panel); }
-.filters label { display: inline-flex; gap: 4px; align-items: center; cursor: pointer; }
+.filters { display: grid; gap: 6px; padding: 8px 12px; border-bottom: 1px solid var(--rule); font-size: 12px; color: var(--ink-soft); position: sticky; top: 0; background: var(--panel); }
+.filterbar { display: flex; align-items: center; gap: 8px; }
+.filterbar .count { font-family: var(--font-data); }
+.chips { display: flex; flex-wrap: wrap; gap: 4px; }
+.filters:not(.open) .chips { display: none; }
+/* Small toggle buttons (filters, chips, the map key): pressed = ink, like the speed buttons. */
+.toggle { border: 1px solid var(--rule); background: var(--panel); color: var(--ink-soft); padding: 2px 8px; border-radius: 3px; font-size: 12px; }
+.toggle:hover { border-color: var(--ink-soft); }
+.toggle[aria-pressed="true"], .toggle[aria-expanded="true"] { background: var(--ink); color: var(--ground); border-color: var(--ink); }
 .pane .filters { position: sticky; top: 0; z-index: 1; }
 .feed { list-style: none; margin: 0; padding: 0; }
+.feed .details, .tltip .details { display: block; margin-top: 1px; color: var(--ink-soft); font-family: var(--font-data); font-size: 11.5px; }
+.details .nw { white-space: nowrap; }
+.feed .details b, .tltip .details b { color: var(--ink); font-weight: 500; }
 .feed li { display: grid; grid-template-columns: 52px 1fr; gap: 8px; padding: 6px 12px; border-bottom: 1px solid var(--rule); cursor: pointer; font-size: 13px; line-height: 1.35; }
 .feed li:hover { background: color-mix(in srgb, var(--accent) 8%, transparent); }
 .feed time { font-family: var(--font-data); font-size: 12px; color: var(--ink-soft); font-variant-numeric: tabular-nums; }
@@ -163,6 +196,9 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
 .clipslot > .btn { grid-area: 1 / 1; }
 .clipslot > .btn[hidden] { display: block !important; visibility: hidden; }
 .share .btn[aria-pressed="true"] { background: var(--ink); color: var(--ground); border-color: var(--ink); }
+.tltip { bottom: calc(100% + 6px); font-family: var(--font-ui); font-size: 12px; max-width: min(360px, 90vw); white-space: normal; z-index: 6; }
+.tltip .lane { font-family: var(--font-display); font-weight: 600; font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-soft); }
+.tltip time { font-family: var(--font-data); color: var(--ink-soft); margin-right: 6px; }
 .speed { display: flex; gap: 2px; }
 .share { position: relative; display: flex; gap: 6px; }
 .share .btn { font-family: var(--font-data); font-size: 12px; padding: 4px 8px; white-space: nowrap; }
@@ -189,16 +225,21 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
   main { grid-template-columns: 1fr; }
   .board { height: 58svh; border-right: 0; border-bottom: 1px solid var(--rule); }
   aside { height: 50svh; }
-  .transport { grid-template-columns: auto 1fr; position: sticky; bottom: 0; background: var(--ground); padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px)); }
+  .transport { grid-template-columns: auto auto 1fr auto; gap: 8px 10px; position: sticky; bottom: 0; z-index: 5; background: var(--ground); box-shadow: 0 -6px 12px -8px rgba(0,0,0,.25); padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px)); }
   .timeline { grid-column: 1 / -1; order: 3; }
   .speed { justify-self: end; }
-  .card { right: 10px; top: auto; bottom: 34px; width: min(230px, calc(100% - 20px)); }
+  .speed button { padding: 3px 4px; font-size: 11px; }
+  .facts .more { display: none; }
+  .clock { white-space: nowrap; font-size: 13px; }
+  .clock span { font-size: 11px; }
+  .card { right: 52px; top: 10px; width: min(230px, calc(100% - 64px)); }
+  .board:has(.card:not([hidden])) .facts { display: none; }
   .load { margin-left: 0; }
 }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
 </style>
 
-<div class="app">
+<div class="app waiting" id="app">
   <header>
     <a class="logo" id="logo" hidden><img alt=""></a>
     <h1 id="title">AAR Viewer</h1>
@@ -216,7 +257,7 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
   <main>
     <div class="board" id="board">
       <canvas id="map" aria-label="Map of the recorded mission"></canvas>
-      <div class="legend" id="legend"></div>
+      <dl class="facts" id="facts" hidden></dl>
       <div class="zoom">
         <button class="btn" id="zin" aria-label="Zoom in">+</button>
         <button class="btn" id="zout" aria-label="Zoom out">−</button>
@@ -226,8 +267,21 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
         </button>
       </div>
       <div class="layers" id="layers" hidden></div>
-      <div class="scale" id="scale"><i></i><span></span> <em id="tilenote"></em></div>
+      <div class="mapbottom">
+        <div class="tilenote" id="tilenote"></div>
+        <div class="scale" id="scale" hidden><i></i><span></span></div>
+        <div class="legend" id="legend"></div>
+      </div>
       <div class="card" id="card" hidden></div>
+      <div class="dropzone" id="dropzone">
+        <strong>Open a recording</strong>
+        <span>Drop a <code>.jsonl</code> file from the server's <code>aar</code> folder here, or</span>
+        <div class="row">
+          <button class="btn primary" id="dz-open">Open recording</button>
+          <button class="btn" id="dz-recs" hidden>Recordings</button>
+          <button class="btn" id="dz-sample" hidden>Sample data</button>
+        </div>
+      </div>
     </div>
 
     <aside>
@@ -236,8 +290,7 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
         <button role="tab" id="tab-units" aria-selected="false">Units</button>
         <button role="tab" id="tab-radio" aria-selected="false">Radio</button>
         <button role="tab" id="tab-chat" aria-selected="false">Chat</button>
-        <button role="tab" id="tab-mission" aria-selected="false">Mission</button>
-        <button role="tab" id="tab-server" aria-selected="false">Server</button>
+        <button role="tab" id="tab-info" aria-selected="false">Info</button>
         <button role="tab" id="tab-data" aria-selected="false">Data</button>
       </div>
       <div class="pane" id="pane-events">
@@ -254,8 +307,10 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
       </div>
       <div class="pane" id="pane-radio" hidden></div>
       <div class="pane" id="pane-chat" hidden></div>
-      <div class="pane" id="pane-mission" hidden></div>
-      <div class="pane" id="pane-server" hidden></div>
+      <div class="pane" id="pane-info" hidden>
+        <div id="pane-mission"></div>
+        <div id="pane-server"></div>
+      </div>
       <div class="pane" id="pane-data" hidden></div>
     </aside>
   </main>
@@ -271,7 +326,7 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
       <button class="btn" id="sharebtn" aria-haspopup="true" aria-expanded="false" hidden>Share</button>
       <div class="sharepop" id="sharepop" hidden role="dialog" aria-label="Share"></div>
     </div>
-    <div class="timeline"><canvas id="tl" aria-label="Timeline"></canvas></div>
+    <div class="timeline"><canvas id="tl" aria-label="Timeline"></canvas><div class="tip tltip" id="tltip" hidden></div></div>
     <div class="speed" id="speed"></div>
   </div>
 </div>
@@ -679,7 +734,7 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
     let st = $("theme-conf");
     // In the body, after the page's own style block (which build.py also puts in the body), so it wins.
     if (!st) { st = document.createElement("style"); st.id = "theme-conf"; document.body.appendChild(st); }
-    st.textContent = ":root { " + both + " " + vars(th.light) + " }\n" +
+    st.textContent = ":root, .board { " + both + " " + vars(th.light) + " }\n" +
       "@media (prefers-color-scheme: dark) { :root:not([data-theme=\"light\"]) { " + dark + " } }\n:root[data-theme=\"dark\"] { " + dark + " }";
     if ((th.mode === "light" || th.mode === "dark") && !document.documentElement.dataset.theme) document.documentElement.dataset.theme = th.mode;
     try { themeChanged(); } catch (_) {}   // not defined yet on the first, synchronous call
@@ -691,11 +746,11 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
   // tools/export_icons.py) the textures as PNG (aar-icons.json, which lists PNG files beside it or
   // holds them as data URIs). They are opened like a recording, or found next to the page or in aar/
   // when served over http, and kept in IndexedDB for next time.
-  const game = { vehicles: {}, weapons: {}, factions: {}, vehicle_icons: {}, marker_icons: {}, marker_defaults: {}, icons: {}, images: new Map(), tinted: new Map() };
+  const game = { vehicles: {}, weapons: {}, factions: {}, vehicle_icons: {}, marker_icons: {}, marker_defaults: {}, marker_colors: {}, icons: {}, images: new Map(), tinted: new Map() };
   const texKey = p => { p = lc(p).replace(/\//g, "\\").replace(/^\\+/, ""); return p && !/\.[^\\]*$/.test(p) ? p + ".paa" : p; };
   function applyGame(pack) {
     const low = o => Object.fromEntries(Object.entries(o || {}).map(([k, v]) => [lc(k), v]));
-    if (pack.format === "aar-cfg") for (const k of ["vehicles", "weapons", "factions", "vehicle_icons", "marker_icons", "marker_defaults"]) game[k] = low(pack[k]);
+    if (pack.format === "aar-cfg") for (const k of ["vehicles", "weapons", "factions", "vehicle_icons", "marker_icons", "marker_defaults", "marker_colors"]) game[k] = low(pack[k]);
     else if (pack.format === "aar-icons") { Object.assign(game.icons, pack.icons || {}); game.images.clear(); game.tinted.clear(); }
     else return false;
     cardKey = ""; feedKey = "";
@@ -779,13 +834,17 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
   }
 
   // ---------- colours ----------
-  let C = {};
+  // C is the page's colours; MC the map's, which stay light in dark mode. Map drawing swaps MC in as C.
+  let C = {}, MC = {};
   function readColors() {
-    const cs = getComputedStyle(document.documentElement);
-    for (const k of ["ground", "panel", "ink", "ink-soft", "rule", "grid", "grid-major", "accent", "west", "east", "guer", "civ", "dead", "radio", "chat"]) C[k] = cs.getPropertyValue("--" + k).trim();
+    const keys = ["ground", "panel", "ink", "ink-soft", "rule", "grid", "grid-major", "accent", "west", "east", "guer", "civ", "dead", "radio", "chat"];
+    const cs = getComputedStyle(document.documentElement), ms = getComputedStyle($("board"));
+    C = {}; MC = {};
+    for (const k of keys) { C[k] = cs.getPropertyValue("--" + k).trim(); MC[k] = ms.getPropertyValue("--" + k).trim(); }
   }
+  const withMapColors = f => { const page = C; C = MC; try { return f(); } finally { C = page; } };
   const sideColor = s => ({ WEST: C.west, EAST: C.east, GUER: C.guer, CIV: C.civ })[s] || C["ink-soft"];
-  // Arma CfgMarkerColors values read from the running game config.
+  // Arma's vanilla CfgMarkerColors values, for config exports without marker_colors.
   const MARKER_RGBA = {
     default: [0, 0, 0, 1], colorblack: [0, 0, 0, 1], colorgrey: [.5, .5, .5, 1],
     colorred: [.9, 0, 0, 1], colorbrown: [.5, .25, 0, 1], colororange: [.85, .4, 0, 1],
@@ -798,16 +857,30 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
     color3_fd_f: [.941176, .509804, .192157, 1], color4_fd_f: [.403922, .545098, .607843, 1],
     color5_fd_f: [.690196, .25098, .654902, 1], color6_fd_f: [.352941, .34902, .352941, 1]
   };
-  const markerColor = (c, type) => {
+  const validRGBA = v => Array.isArray(v) && v.length >= 3 && v.slice(0, 4).every(x => typeof x === "number" && Number.isFinite(x));
+  // [r, g, b, a] in 0-1 for a marker colour class, or null when neither the export nor Arma's own list knows it.
+  const markerRGBA = (c, type) => {
     const key = lc(c), marker = lc(type);
     const markerDefault = game.marker_defaults[marker];
+    if (key === "default" && markerDefault && validRGBA(markerDefault[0])) return markerDefault[0];
     const faction = marker.match(/^([obnc])_/);
     const factionColor = key === "default" && faction && ({ o: "coloropfor", b: "colorblufor", n: "colorguer", c: "colorciv" })[faction[1]];
-    const rgba = key === "default" && markerDefault && Array.isArray(markerDefault[0]) ? markerDefault[0] : MARKER_RGBA[factionColor || key];
-    if (!rgba || rgba.length < 3 || rgba.slice(0, 4).some(v => typeof v !== "number" || !Number.isFinite(v))) return "#b39900";
-    const channel = i => Math.round(Math.max(0, Math.min(1, rgba[i])) * 255);
-    const alpha = rgba.length > 3 ? Math.max(0, Math.min(1, rgba[3])) : 1;
-    return "rgba(" + channel(0) + "," + channel(1) + "," + channel(2) + "," + alpha + ")";
+    const rgba = game.marker_colors[factionColor || key] || MARKER_RGBA[factionColor || key];
+    return validRGBA(rgba) ? rgba : null;
+  };
+  const clamp01 = v => Math.max(0, Math.min(1, v));
+  const markerColor = (c, type) => {
+    const rgba = markerRGBA(c, type);
+    if (!rgba) return C["ink-soft"];
+    const channel = i => Math.round(clamp01(rgba[i]) * 255);
+    return "rgba(" + channel(0) + "," + channel(1) + "," + channel(2) + "," + (rgba.length > 3 ? clamp01(rgba[3]) : 1) + ")";
+  };
+  // Outline for marker text: light behind dark colours and dark behind light ones, so labels read on either theme.
+  const markerOutline = (c, type) => {
+    const rgba = markerRGBA(c, type);
+    if (!rgba) return C.ground;
+    const lum = .2126 * clamp01(rgba[0]) + .7152 * clamp01(rgba[1]) + .0722 * clamp01(rgba[2]);
+    return lum < .5 ? "rgba(255,255,255,.85)" : "rgba(0,0,0,.85)";
   };
   const sideName = s => ({ WEST: "BLUFOR", EAST: "OPFOR", GUER: "Independent", CIV: "Civilian" })[s] || s;
   // Arma chat channel numbers; 6-15 are the mission's custom channels.
@@ -884,14 +957,17 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
     // scale bar
     const nice = [1, 2, 5, 10, 20, 50, 100, 200, 500, 1000, 2000, 5000, 10000];
     const m = nice.find(n => n * view.scale >= 70) || 10000;
+    $("scale").hidden = false;
     $("scale").firstElementChild.style.width = (m * view.scale) + "px";
     $("scale").querySelector("span").textContent = m >= 1000 ? m / 1000 + " km" : m + " m";
   }
 
+  const DEAD_ALPHA = 0.5;   // dead units and wrecks are drawn faded, under everything else
   function drawUnit(ctx, sx, sy, dir, col, alive, isPlayer, sel, down = false, letter = "", icon = null) {
     if (!alive) {
       ctx.strokeStyle = C.dead; ctx.lineWidth = 1.6; ctx.beginPath();
       ctx.moveTo(sx - 4, sy - 4); ctx.lineTo(sx + 4, sy + 4); ctx.moveTo(sx + 4, sy - 4); ctx.lineTo(sx - 4, sy + 4); ctx.stroke();
+      if (sel) { const a = ctx.globalAlpha; ctx.globalAlpha = 1; ctx.strokeStyle = C.accent; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(sx, sy, 10, 0, Math.PI * 2); ctx.stroke(); ctx.globalAlpha = a; }
       return;
     }
     // The game's map icon, once zoomed in (about 1 px per metre), in place of the dot.
@@ -1087,7 +1163,7 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
       const st = markerAt(m, t); if (!st) continue;
       const col = markerColor(st.color, st.type);
       if (st.shape === "POLYLINE" && Array.isArray(st.line) && st.line.length >= 4) {
-        ctx.globalAlpha = st.alpha; ctx.strokeStyle = col; ctx.lineWidth = Math.max(1, (st.size && st.size[0]) || 1); ctx.lineJoin = ctx.lineCap = "round";
+        ctx.globalAlpha = st.alpha; ctx.strokeStyle = col; ctx.lineWidth = Math.max(2, (st.size && st.size[0]) || 0); ctx.lineJoin = ctx.lineCap = "round";
         ctx.beginPath();
         for (let i = 0; i + 1 < st.line.length; i += 2) { const [x, y] = toScreen(st.line[i], st.line[i + 1]); i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); }
         ctx.stroke(); ctx.globalAlpha = 1; continue;
@@ -1144,8 +1220,10 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
       if (st.text) {
         ctx.font = "600 12px " + font; ctx.textAlign = icon ? "left" : "center"; ctx.textBaseline = "middle";
         const x = icon ? sx + width / 2 + 4 : sx;
-        ctx.lineWidth = 3; ctx.strokeStyle = C.ground; ctx.strokeText(st.text, x, sy);
+        if (placeLabel(ctx, st.text, x, sy)) {
+        ctx.lineWidth = 3; ctx.strokeStyle = markerOutline(st.color, st.type); ctx.strokeText(st.text, x, sy);
         ctx.fillStyle = markerColor(st.color, st.type); ctx.fillText(st.text, x, sy);
+        }
       }
       ctx.globalAlpha = 1;
     }
@@ -1163,8 +1241,10 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
   }
 
   let drawn = [];   // [id, sx, sy] for picking
-  function drawMap() {
+  function drawMap() { withMapColors(drawMapNow); }
+  function drawMapNow() {
     const ctx = mctx;
+    labelBoxes = [];
     ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
     ctx.fillStyle = C.ground; ctx.fillRect(0, 0, W, H);
     if (!rec) return;
@@ -1173,6 +1253,25 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
     if (layers.grid) drawGrid();
     if (layers.markers) drawMarkerAreas(ctx);
     if (layers.coverMap) drawCoverMaps(ctx);
+
+    // Everything present now. The dead go first, faded, so the living and the markers draw over them.
+    drawn = [];
+    const crew = new Map();
+    const states = [];
+    for (const e of rec.entities.values()) {
+      const s = stateAt(e, t); if (!s) continue;
+      states.push([e, s]);
+      if (e.kind === "unit" && s.veh && s.alive) crew.set(s.veh, (crew.get(s.veh) || 0) + 1);
+    }
+    ctx.globalAlpha = DEAD_ALPHA;
+    for (const [e, s] of states) {
+      if (s.alive || !layers[e.kind === "unit" ? "units" : "vehicles"]) continue;
+      const [sx, sy] = toScreen(s.x, s.y);
+      if (e.kind === "unit") drawUnit(ctx, sx, sy, s.dir, C.dead, false, false, e.id === selected);
+      else drawVehicle(ctx, sx, sy, s.dir, C.dead, false, 0, e.id === selected, e.kind, tinted(iconPath(e), C.dead));
+      drawn.push([e.id, sx, sy]);
+    }
+    ctx.globalAlpha = 1;
 
     // kill sites
     if (layers.hits) for (const k of rec.kills) {
@@ -1220,24 +1319,16 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
       ctx.globalAlpha = 1;
     }
 
-    // entities: vehicles first, then units on foot
-    drawn = [];
-    const crew = new Map();
-    const states = [];
-    for (const e of rec.entities.values()) {
-      const s = stateAt(e, t); if (!s) continue;
-      states.push([e, s]);
-      if (e.kind === "unit" && s.veh && s.alive) crew.set(s.veh, (crew.get(s.veh) || 0) + 1);
-    }
+    // living entities: vehicles first, then units on foot
     for (const [e, s] of states) {
-      if (e.kind === "unit" || !layers.vehicles) continue;
+      if (e.kind === "unit" || !s.alive || !layers.vehicles) continue;
       const [sx, sy] = toScreen(s.x, s.y);
       const col = sideColor(sideAt(e, t));
       drawVehicle(ctx, sx, sy, s.dir, col, s.alive, crew.get(e.id) || 0, e.id === selected, e.kind, tinted(iconPath(e), s.alive ? col : C.dead));
       drawn.push([e.id, sx, sy]);
     }
     for (const [e, s] of states) {
-      if (e.kind !== "unit" || (s.veh && s.alive) || !layers.units) continue;
+      if (e.kind !== "unit" || !s.alive || s.veh || !layers.units) continue;
       const [sx, sy] = toScreen(s.x, s.y);
       const isP = isPlayerAt(e, t);
       const col = sideColor(sideAt(e, t));
@@ -1245,7 +1336,7 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
       drawn.push([e.id, sx, sy]);
       if (e.id === selected && s.alive) {
         ctx.fillStyle = C.ink; ctx.font = "12px " + getComputedStyle(document.body).getPropertyValue("--font-ui");
-        ctx.textAlign = "left"; ctx.textBaseline = "middle"; ctx.fillText(nameAt(e, t), sx + 10, sy - 9);
+        ctx.textAlign = "left"; ctx.textBaseline = "middle"; placeLabel(ctx, nameAt(e, t), sx + 10, sy - 9, true); ctx.fillText(nameAt(e, t), sx + 10, sy - 9);
       }
     }
 
@@ -1268,9 +1359,23 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
 
   // ---------- group markers and map events ----------
   const MODE_SHORT = { SAFE: "SAFE", AWARE: "AWARE", COMBAT: "COMBAT", STEALTH: "STEALTH", CARELESS: "CARELESS" };
+  // Screen boxes of the labels drawn this frame, in drawing order: markers, the selected unit, group
+  // markers, then event labels. A later label that would overlap an earlier one is left out.
+  let labelBoxes = [];
+  function placeLabel(ctx, text, x, y, force) {
+    const w = ctx.measureText(text).width, h = 14;
+    const left = ctx.textAlign === "center" ? x - w / 2 : ctx.textAlign === "right" || ctx.textAlign === "end" ? x - w : x;
+    const top = ctx.textBaseline === "top" ? y : ctx.textBaseline === "bottom" ? y - h : y - h / 2;
+    const box = [left - 2, top - 1, left + w + 2, top + h + 1];
+    if (!force && labelBoxes.some(b => box[0] < b[2] && box[2] > b[0] && box[1] < b[3] && box[3] > b[1])) return false;
+    labelBoxes.push(box);
+    return true;
+  }
   function halo(ctx, text, x, y, color) {
+    if (!placeLabel(ctx, text, x, y)) return false;
     ctx.lineWidth = 3; ctx.strokeStyle = C.ground; ctx.strokeText(text, x, y);
     ctx.fillStyle = color || C.ink; ctx.fillText(text, x, y);
+    return true;
   }
   // ---------- TMF group markers ----------
   // Same rules as TMF's ORBAT tracker (addons/orbat/functions/fnc_updateArray.sqf, fnc_drawArrayRec.sqf):
@@ -1626,6 +1731,7 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
   const tl = $("tl"), tctx = tl.getContext("2d");
   let tlDirty = true, tlBase = null;
   function drawTimeline() {
+    if (!tl.width || !tl.height) return;   // hidden until a recording is open
     const w = tl.width / DPR, h = tl.height / DPR;
     tctx.setTransform(DPR, 0, 0, DPR, 0, 0);
     if (tlDirty || !tlBase) {
@@ -1685,18 +1791,20 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
   }
 
   // ---------- feed ----------
+  // The quieter second line of a feed row: weapon, distance, cause, grid.
+  const details = parts => { parts = parts.filter(Boolean); return parts.length ? '<span class="details">' + parts.map(x => '<span class="nw">' + x + "</span>").join(" · ") + "</span>" : ""; };
   function describe(o) {
     switch (o.type) {
       case "killed": {
         const by = o.instigator || o.killer;
-        return ["kills", '<span class="k s-EAST">Killed</span> ' + who(o.victim, o.t) + (by && by !== o.victim ? " by " + who(by, o.t) : "") +
-          (o.weapon ? ' <span class="tag">' + esc(o.weapon_name || weaponName(o.weapon)) + "</span>" : "") +
-          (o.distance !== undefined ? ' <span class="tag">' + Math.round(o.distance) + " m</span>" : "") +
-          (o.credit === "last_hit" ? ' <span class="tag" title="The game named no killer; credited to the last hit">last hit</span>' : "") +
-          (o.cause && !/^#(scripted|setdead)$/i.test(o.cause) ? ' <span class="tag">' + esc(String(o.cause).replace(/^#/, "")) + "</span>" : "") +
-          (o.pos ? ' <span class="tag">' + grid(o.pos[0], o.pos[1]) + "</span>" : "")];
+        return ["kills", '<span class="k s-EAST">Killed</span> ' + who(o.victim, o.t) + (by && by !== o.victim ? " by " + who(by, o.t) : "") + details([
+          o.weapon ? "<b>" + esc(o.weapon_name || weaponName(o.weapon)) + "</b>" : "",
+          o.distance !== undefined ? Math.round(o.distance) + " m" : "",
+          o.credit === "last_hit" ? '<span title="The game named no killer; credited to the last hit">last hit</span>' : "",
+          o.cause && !/^#(scripted|setdead)$/i.test(o.cause) ? esc(String(o.cause).replace(/^#/, "")) : "",
+          o.pos ? "grid " + grid(o.pos[0], o.pos[1]) : ""])];
       }
-      case "unconscious": return ["kills", '<span class="k">Unconscious</span> ' + who(o.unit, o.t) + (o.by ? " after a hit from " + who(o.by, o.t) : "") + (o.pos ? ' <span class="tag">' + grid(o.pos[0], o.pos[1]) + "</span>" : "")];
+      case "unconscious": return ["kills", '<span class="k">Unconscious</span> ' + who(o.unit, o.t) + (o.by ? " after a hit from " + who(o.by, o.t) : "") + details([o.pos ? "grid " + grid(o.pos[0], o.pos[1]) : ""])];
       case "awake": return ["kills", who(o.unit, o.t) + " woke up"];
       case "wound": {
         const parts = Array.isArray(o.wounds) ? o.wounds.map(w => esc(String(w[0]).replace(/([a-z])([A-Z])/g, "$1 $2").toLowerCase()) + " " + Math.round(w[1] * 100) / 100).join(", ") : "";
@@ -1850,14 +1958,15 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
       if (!at.has(node)) at.set(node, []); at.get(node).push(e);
     }
     const count = node => { let a = 0, n = 0; for (const e of at.get(node) || []) { const x = aliveUnit(e); if (x === null) continue; n++; if (x) a++; } for (const c of node.children || []) { const [ca, cn] = count(c); a += ca; n += cn; } return [a, n]; };
-    const draw = (node, sd) => {
+    // A node leaves out its alive count when it is the same as its parent's (or the team heading's).
+    const draw = (node, sd, parent = "") => {
       if (!hasEntities(node)) return "";
-      const [a, n] = count(node);
-      let h = '<h4 class="node"><span>' + esc(node.name || node.full_name || "Node " + node.id) + (node.name && node.full_name && node.full_name.trim() !== node.name ? ' <small>' + esc(node.full_name) + "</small>" : "") + "</span><small>" + (n ? a + "/" + n + " alive" : "") + "</small></h4>";
+      const [a, n] = count(node), mine = a + "/" + n;
+      let h = '<h4 class="node"><span>' + esc(node.name || node.full_name || "Node " + node.id) + (node.name && node.full_name && node.full_name.trim() !== node.name ? ' <small>' + esc(node.full_name) + "</small>" : "") + "</span><small>" + (n && mine !== parent ? mine + " alive" : "") + "</small></h4>";
       const list = (at.get(node) || []).sort((x, y) => (x.kind !== "unit") - (y.kind !== "unit") || (groupAt(x, t) || "").localeCompare(groupAt(y, t) || "") || x.id - y.id);
       for (const e of list) h += unitButton(e, sideAt(e, t));
       const kids = [...(node.children || [])].sort((x, y) => (x.order ?? 0) - (y.order ?? 0));
-      if (kids.length) h += '<div class="indent">' + kids.map(c => draw(c, sd)).join("") + "</div>";
+      if (kids.length) h += '<div class="indent">' + kids.map(c => draw(c, sd, mine)).join("") + "</div>";
       return h;
     };
     const entitiesIn = node => [...(at.get(node) || []), ...(node.children || []).flatMap(entitiesIn)];
@@ -1892,7 +2001,7 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
       if (!hasEntities(team)) continue;
       const sd = team.side || "";
       const [a, n] = count(team);
-      html += '<h3 class="s-' + esc(sd) + '">' + esc(teamHeading(team)) + "<span>" + a + "/" + n + " alive</span></h3>" + draw(team, sd);
+      html += '<h3 class="s-' + esc(sd) + '">' + esc(teamHeading(team)) + "<span>" + a + "/" + n + " alive</span></h3>" + draw(team, sd, a + "/" + n);
     }
     if (loose.length) {
       html += "<h3>Not in the ORBAT</h3>";
@@ -1931,7 +2040,7 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
     const loadoutFactionName = loadout ? loadout[2] : e.loadouts.length ? "" : e.loadout_faction_name;
     const roleName = roleNameAt(e, t);
     // Vehicle pictures are white silhouettes, so drawn in the ink colour to show on either theme.
-    const pic = tinted(vehicleRow(e)[1], C.ink);
+    const pic = tinted(vehicleRow(e)[1], MC.ink);
     let picUrl = ""; try { picUrl = pic ? pic.toDataURL() : ""; } catch (_) {}
     card.innerHTML = (picUrl ? '<img class="pic" alt="" src="' + picUrl + '">' : "") + '<h2 class="s-' + esc(sideAt(e, t)) + '">' + esc(nameAt(e, t)) + '</h2><div class="tag">' + esc(e.display) + " · " + esc(e.cls) + "</div><dl>" +
       "<dt>Status</dt><dd>" + (!s ? "not present" : s.alive ? (down ? "unconscious, " : "alive, ") + Math.round(s.dmg * 100) + "% damage" : "dead") + "</dd>" +
@@ -2094,6 +2203,7 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
   }
   function setLayer(k, on) {
     layers[k] = on;
+    renderLegend();
     prefs.layers = Object.fromEntries(LAYERS.filter(([x]) => !layers[x]).map(([x]) => [x, false]));
     savePrefs();
   }
@@ -2146,6 +2256,8 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
     return [...stats.values()].sort((a, b) => a.side.localeCompare(b.side) || b.k - a.k || a.name.localeCompare(b.name));
   }
   // The mission's own name (briefing name, else loading-screen name), falling back to the PBO name.
+  // A recording's length in words, so it can't be read as a time of day: 7 min, 1 h 12 min.
+  const fmtLength = s => { const m = Math.round(Math.max(0, s) / 60); return m < 60 ? Math.max(1, m) + " min" : Math.floor(m / 60) + " h" + (m % 60 ? " " + m % 60 + " min" : ""); };
   function missionTitle(h) { return h.briefing_name || h.on_load_name || h.mission || "Unknown mission"; }
   function worldTitle(h) { return h.world_name || h.world || "?"; }
   function renderMission() {
@@ -2168,7 +2280,7 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
       row("Arma version", Array.isArray(h.game_version) ? esc(h.game_version[0] >= 100 ? (h.game_version[0] / 100).toFixed(2) : h.game_version[0]) + " build " + esc(h.game_version[1]) : "", true) +
       row("Multiplayer", h.multiplayer === undefined ? "" : h.multiplayer ? "yes" : "no") +
       row("Snapshots", h.interval ? "every " + esc(h.interval) + " s, full every " + esc(h.keyframe_interval) + " s" : "") +
-      row("Length", fmt(rec.duration), true) +
+      row("Length", fmtLength(rec.duration), true) +
       row("Ended", rec.end ? esc(rec.end.reason) + " at " + fmt(rec.end.t) : "no end record, the file may have been cut short") +
       row("Format", h.version !== undefined ? "version " + esc(h.version) : "", true) +
       Object.entries(h).filter(([k]) => !HEADER_KEYS.has(k)).map(([k, v]) => row(esc(k), esc(typeof v === "object" ? JSON.stringify(v) : v), true)).join("") +
@@ -2207,7 +2319,7 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
     const avg = a => a.length ? a.reduce((x, y) => x + y, 0) / a.length : NaN;
     const idle = rec.idle.reduce((x, [a, b]) => x + (b - a), 0);
     const tile = (v, label) => "<div><b>" + v + "</b><small>" + label + "</small></div>";
-    let html = '<div class="sec"><div class="stats">' +
+    let html = '<div class="sec"><h3>Server</h3><div class="stats">' +
       tile(fps.length ? avg(fps).toFixed(1) : "–", "average FPS") +
       tile(fmin.length ? Math.min(...fmin).toFixed(1) : "–", "lowest FPS") +
       tile(rec.spikes.length, "frame spikes") +
@@ -2227,7 +2339,7 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
     for (const c of charts) c.base = null;
   }
   function drawCharts() {
-    if (!rec || $("pane-server").hidden) return;
+    if (!rec || $("pane-info").hidden) return;
     charts.forEach((c, i) => {
       const cv = $("chart" + i); if (!cv) return;
       const r = cv.getBoundingClientRect(), w = r.width, h = r.height;
@@ -2314,16 +2426,57 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
     const started = h.started_utc ? new Date(h.started_utc) : null;
     $("meta").innerHTML =
       (rec.label ? '<span class="sample">' + esc(rec.label) + "</span>" : "") +
-      "<span><b>" + esc(missionTitle(h)) + "</b> on " + esc(worldTitle(h)) + "</span>" +
-      (started && !isNaN(started) ? "<span>" + started.toISOString().slice(0, 16).replace("T", " ") + " UTC</span>" : "") +
-      "<span>" + fmt(rec.duration) + "</span>" +
-      "<span>" + rec.entities.size + " entities" + (players.size ? ", " + players.size + (players.size > 1 ? " players" : " player") : "") + "</span>" +
-      "<span>" + rec.shots.size + " shots</span><span>" + rec.kills.length + " kills</span>";
-    const sides = new Set([...rec.entities.values()].map(e => e.side));
-    $("legend").innerHTML = [...sides].filter(s => ["WEST", "EAST", "GUER", "CIV"].includes(s)).sort().map(s =>
-      '<span><i style="background:var(--' + ({ WEST: "west", EAST: "east", GUER: "guer", CIV: "civ" })[s] + ')"></i>' + sideName(s) + "</span>").join("") +
-      '<span><i style="background:var(--accent);border-radius:0;height:2px"></i>Tracer</span>' +
-      (rec.tx.length ? '<span><i style="background:var(--radio)"></i>On the radio</span>' : "");
+      "<span><b>" + esc(missionTitle(h)) + "</b> on " + esc(worldTitle(h)) + "</span>";
+    const fact = (k, v, more) => "<dt" + (more ? ' class="more"' : "") + ">" + k + "</dt><dd" + (more ? ' class="more"' : "") + ">" + v + "</dd>";
+    $("facts").innerHTML = fact("Length", fmtLength(rec.duration)) + fact("Players", players.size) +
+      (started && !isNaN(started) ? fact("Started", started.toISOString().slice(0, 16).replace("T", " ") + " UTC", true) : "") +
+      fact("Entities", rec.entities.size, true) + fact("Shots", rec.shots.size, true) + fact("Kills", rec.kills.length, true);
+    $("facts").hidden = false;
+    renderLegend();
+  }
+  // The map's legend: an entry for each kind of mark this recording has and the layers show.
+  const LEGEND_ICONS = {
+    player: '<circle cx="7" cy="7" r="3.5" fill="var(--ink-soft)"/><circle cx="7" cy="7" r="6" fill="none" stroke="var(--ink)" stroke-width="1.5"/>',
+    down: '<circle cx="7" cy="7" r="3.5" fill="var(--ink-soft)" opacity=".45"/><circle cx="7" cy="7" r="6" fill="none" stroke="var(--ink-soft)" stroke-width="1.5" stroke-dasharray="2 2"/>',
+    dead: '<path d="M3.5 3.5l7 7M10.5 3.5l-7 7" stroke="var(--dead)" stroke-width="1.6" opacity=".6"/>',
+    group: '<rect x="1.5" y="3" width="11" height="8" fill="none" stroke="var(--ink)" stroke-width="1.3"/><path d="M1.5 3l11 8M12.5 3l-11 8" stroke="var(--ink)" stroke-width="1"/>',
+    kill: '<circle cx="7" cy="7" r="5" fill="none" stroke="var(--east)" stroke-width="2"/>',
+    tracer: '<path d="M1 10L13 4" stroke="var(--accent)" stroke-width="1.6" stroke-linecap="round"/>',
+    radio: '<path d="M2.5 6a6 6 0 0 1 9 0M4.5 8.5a3 3 0 0 1 5 0" fill="none" stroke="var(--radio)" stroke-width="1.6" stroke-linecap="round"/>',
+    chat: '<path d="M1.5 2.5h11v7h-6l-3 2.5v-2.5h-2z" fill="none" stroke="var(--chat)" stroke-width="1.3" stroke-linejoin="round"/>',
+    spot: '<path d="M1 11L13 3" stroke="var(--ink-soft)" stroke-width="1.3" stroke-dasharray="3 2"/>',
+    building: '<rect x="2.5" y="2.5" width="9" height="9" fill="none" stroke="var(--dead)" stroke-width="1.4"/><path d="M2.5 2.5l9 9" stroke="var(--dead)" stroke-width="1.4"/>',
+    cover: '<rect x="0" y="0" width="14" height="14" fill="#000" opacity=".35"/><rect x="3" y="3" width="8" height="8" fill="var(--ground)" stroke="var(--ink)" stroke-width="1.2" stroke-dasharray="3 2"/>',
+  };
+  $("legend").classList.toggle("open", matchMedia("(min-width: 821px)").matches);
+  $("legend").addEventListener("click", e => {
+    if (!e.target.closest(".keytoggle")) return;
+    $("legend").classList.toggle("open");
+    e.target.closest(".keytoggle").setAttribute("aria-expanded", $("legend").classList.contains("open"));
+  });
+  function renderLegend() {
+    if (!rec) { $("legend").innerHTML = ""; return; }
+    const ents = [...rec.entities.values()];
+    const has = { units: ents.some(e => e.kind === "unit"), vehicles: ents.some(e => e.kind !== "unit") };
+    const item = (icon, label) => '<span class="key"><svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true">' + LEGEND_ICONS[icon] + "</svg>" + label + "</span>";
+    const sides = new Set(ents.filter(e => (e.kind === "unit" ? layers.units : layers.vehicles)).map(e => e.side));
+    let html = [...sides].filter(s => ["WEST", "EAST", "GUER", "CIV"].includes(s)).sort().map(s =>
+      '<span><i style="background:var(--' + ({ WEST: "west", EAST: "east", GUER: "guer", CIV: "civ" })[s] + ')"></i>' + sideName(s) + "</span>").join("");
+    if (layers.units && ents.some(e => e.kind === "unit" && (e.player || e.players.length))) html += item("player", "Player");
+    if (layers.units && ents.some(e => e.downs.length)) html += item("down", "Unconscious");
+    if ((layers.units && has.units) || (layers.vehicles && has.vehicles)) html += item("dead", "Dead");
+    if (layers.groups && (rec.orbat || rec.groupIcon.size || ents.some(e => e.kind === "unit" && e.group))) html += item("group", "Group");
+    if (layers.hits && rec.kills.length) html += item("kill", "Killed here");
+    if (layers.tracers && rec.shotList.length) html += item("tracer", "Tracer");
+    if (layers.radio && rec.tx.length) html += item("radio", "On the radio");
+    if (layers.chat && rec.chat.length) html += item("chat", "Chat");
+    if (layers.detections && rec.detections.length) html += item("spot", "AI spotted");
+    if (layers.buildings && rec.buildings.length) html += item("building", "Destroyed building");
+    if (layers.coverMap && rec.coverMaps.size) html += item("cover", "Cover map");
+    // The key folds behind its button like the event filters; the sides always show.
+    if (html.includes('class="key"')) html = '<button class="toggle keytoggle" type="button" aria-expanded="' + $("legend").classList.contains("open") + '">Key</button>' + html;
+    $("legend").innerHTML = html;
+    $("legend").hidden = !html;
   }
 
   function load(text, label) {
@@ -2335,7 +2488,7 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
       const world = String(r.header.world || "").toLowerCase();
       loadTerrain(world, +r.header.world_size || WORLD_SIZES[world] || 0);
       $("samplebtn").hidden = true;   // only offered while nothing is loaded; keeps the header on one line
-      rec = r; t = 0; selected = 0; follow = false; playing = false; setPlayIcon();
+      rec = r; t = 0; selected = 0; follow = false; playing = false; setPlayIcon(); setEmpty();
       setClip(null); setClipMode(false); setLink(null); $("sharebtn").hidden = false; $("clipbtn").hidden = false; showShare(false);
       $("error").hidden = true;
       unitMode = r.orbat ? "orbat" : "groups"; $("orbat-mode").hidden = !r.orbat; setUnitMode(unitMode);
@@ -2362,11 +2515,27 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
   };
   $("speed").innerHTML = SPEEDS.map(s => '<button data-s="' + s + '" aria-pressed="' + (s === speed) + '">' + s + "×</button>").join("");
   $("speed").onclick = e => { const b = e.target.closest("button"); if (!b) return; speed = +b.dataset.s; for (const x of $("speed").children) x.setAttribute("aria-pressed", +x.dataset.s === speed); };
-  $("filters").innerHTML = FILTERS.map(f => '<label><input type="checkbox" id="f-' + f[0] + '"' + (f[2] ? " checked" : "") + ">" + f[1] + "</label>").join("");
-  $("filters").onchange = e => { filters[e.target.id.slice(2)] = e.target.checked; renderFeed(true); };
+  // Filters fold behind their button: open on a wide screen, folded on a phone.
+  const wide = matchMedia("(min-width: 821px)").matches;
+  $("filters").classList.toggle("open", wide);
+  $("filters").innerHTML = '<div class="filterbar"><button class="toggle" id="filtertoggle" aria-expanded="' + wide + '" aria-controls="chips">Filter</button><span class="count" id="filtercount"></span></div>' +
+    '<div class="chips" id="chips">' + FILTERS.map(f => '<button class="toggle" data-f="' + f[0] + '" aria-pressed="' + f[2] + '">' + f[1] + "</button>").join("") + "</div>";
+  const filterCount = () => { $("filtercount").textContent = Object.values(filters).filter(Boolean).length + " of " + FILTERS.length + " shown"; };
+  filterCount();
+  $("filters").onclick = e => {
+    if (e.target.closest("#filtertoggle")) {
+      const open = $("filters").classList.toggle("open");
+      $("filtertoggle").setAttribute("aria-expanded", open);
+      return;
+    }
+    const b = e.target.closest("button[data-f]"); if (!b) return;
+    filters[b.dataset.f] = !filters[b.dataset.f];
+    b.setAttribute("aria-pressed", filters[b.dataset.f]);
+    filterCount(); renderFeed(true);
+  };
   $("feed").onclick = e => { const li = e.target.closest("li[data-t]"); if (li) { t = +li.dataset.t; } };
   $("pane-units").onclick = e => { const b = e.target.closest("button[data-id]"); if (!b) return; const id = +b.dataset.id; select(id === selected ? 0 : id); const en = rec.entities.get(id), s = en && stateAt(en, t); if (s && id) { view.cx = s.x; view.cy = s.y; } };
-  const TABS = ["events", "units", "radio", "chat", "mission", "server", "data"];
+  const TABS = ["events", "units", "radio", "chat", "info", "data"];
   for (const name of TABS) {
     $("tab-" + name).onclick = () => {
       for (const x of TABS) { $("tab-" + x).setAttribute("aria-selected", x === name); $("pane-" + x).hidden = x !== name; }
@@ -2387,8 +2556,8 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
     renderRoster(true);
   }
   $("show-all-units").setAttribute("aria-pressed", unitFilterMode === "all");
-  // Anything with a time in the Mission, Server and Data tabs seeks there when clicked.
-  for (const name of ["radio", "chat", "mission", "server", "data"]) $("pane-" + name).addEventListener("click", e => { const x = e.target.closest("[data-t]"); if (x && rec) t = Math.min(rec.duration, +x.dataset.t); });
+  // Anything with a time in the Radio, Chat, Info and Data tabs seeks there when clicked.
+  for (const name of ["radio", "chat", "info", "data"]) $("pane-" + name).addEventListener("click", e => { const x = e.target.closest("[data-t]"); if (x && rec) t = Math.min(rec.duration, +x.dataset.t); });
   $("pane-data").addEventListener("click", e => {
     const tr = e.target.closest("tr[data-type]");
     if (tr) { dataType = tr.dataset.type; dataLimit = 100; for (const r of $("types").querySelectorAll("tr[data-type]")) r.setAttribute("aria-selected", r === tr); renderDataList(); $("dq").scrollIntoView({ block: "start" }); }
@@ -2472,7 +2641,9 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
     if (clipDrag) { const v = tlTime(e); clipSel = { a: Math.min(v, clipDrag.fixed), b: Math.max(v, clipDrag.fixed) }; t = v; }
     else if (scrubbing) scrub(e);
     else tl.style.cursor = clipEdge(e) ? "ew-resize" : clipMode || e.shiftKey ? "crosshair" : "";
+    if (clipDrag) $("tltip").hidden = true; else timelineTip(e);
   });
+  tl.addEventListener("pointerleave", () => { $("tltip").hidden = true; });
   const tlUp = e => {
     scrubbing = false;
     if (!clipDrag) return;
@@ -2485,6 +2656,39 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
   };
   tl.addEventListener("pointerup", tlUp); tl.addEventListener("pointercancel", tlUp);
   $("clipbtn").onclick = () => setClipMode(!clipMode);
+
+  // Timeline tooltip: the lane under the pointer (same rows drawTimeline uses) and what is in it there.
+  const TL_LANES = [
+    ["Kills", 0, 12, () => rec.kills, o => o.t],
+    ["AI", 12, 18, () => rec.events.filter(o => o.type === "combat_mode" || o.type === "enemy_detected" || o.type === "fleeing"), o => o.t],
+    ["Radio", 18, 24, () => rec.tx, o => o.t0],
+    ["Chat", 24, 30, () => rec.chat, o => o.t],
+  ];
+  function timelineTip(e) {
+    const tip = $("tltip");
+    if (!rec || !rec.duration || e.pointerType === "touch") { tip.hidden = true; return; }
+    const r = tl.getBoundingClientRect(), x = e.clientX - r.left, y = e.clientY - r.top, w = r.width, h = r.height;
+    const at = Math.max(0, Math.min(rec.duration, x / w * rec.duration)), near = 5 / w * rec.duration;
+    let lane = "Shots", body = "";
+    const L = TL_LANES.find(l => y >= l[1] && y < l[2]);
+    if (L) {
+      lane = L[0];
+      let best = null, bd = near;
+      for (const o of L[3]()) { const d = Math.abs(L[4](o) - at); if (d <= bd) { bd = d; best = o; } }
+      // rec.tx holds the transmissions themselves; the feed's radio_tx records point at them.
+      if (best) body = "<time>" + fmt(L[4](best)) + "</time>" + (describe(best.type === "radio_tx" && !best.tx ? { ...best, tx: best } : best) || ["", ""])[1];
+    } else {
+      const spike = y > h - 22 && rec.spikes.find(o => Math.abs(o.t - at) <= near);
+      if (spike) { lane = "Server"; body = "<time>" + fmt(spike.t) + "</time>" + describe(spike)[1]; }
+      else {
+        const a = Math.max(0, at - near * 3), b = at + near * 3, n = rec.shotList.filter(s => s.t0 >= a && s.t0 < b).length;
+        if (n) body = "<time>" + fmt(a) + "–" + fmt(b) + "</time>" + n + (n > 1 ? " shots" : " shot");
+      }
+    }
+    tip.innerHTML = '<div class="lane">' + lane + "</div>" + (body || "<time>" + fmt(at) + "</time>");
+    tip.hidden = false;
+    tip.style.left = Math.max(0, Math.min(w - tip.offsetWidth, x - tip.offsetWidth / 2)) + "px";
+  }
 
   addEventListener("keydown", e => {
     if (!rec || e.target.closest("input, select")) return;
@@ -2626,8 +2830,17 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
     fetch(src).then(r => { if (!r.ok) throw new Error("HTTP " + r.status); return r.text(); })
       .then(x => { load(x, ""); setLink({ src }); applyPending(); }, err => { $("meta").innerHTML = ""; $("error").textContent = "Could not load " + src + ": " + err.message; $("error").hidden = false; });
   } else if (sample) { load(sample.textContent, sample.dataset.label || "Example recording"); setLink({}); applyPending(); }
-  else $("meta").innerHTML = "<span>Open a <b>.jsonl</b> recording from the <b>aar</b> folder, or drop it on the page" +
-    (location.protocol === "file:" ? "" : ", or try the <b>sample data</b>") + ".</span>";
+  // The drop zone's buttons stand in for the header's, and show when they do.
+  function setEmpty() {
+    $("app").classList.toggle("waiting", !rec);
+    $("dz-recs").hidden = $("recbtn").hidden;
+    $("dz-sample").hidden = !sample && location.protocol === "file:";
+  }
+  $("dz-open").onclick = () => $("file").click();
+  $("dz-recs").onclick = e => { e.stopPropagation(); showRecList(true); };
+  $("dz-sample").onclick = () => $("samplebtn").onclick();
+  new MutationObserver(setEmpty).observe($("recbtn"), { attributes: true, attributeFilter: ["hidden"] });
+  setEmpty();
   // Made-up recording on Stratis: the embedded example if there is one, else sample.jsonl next to the page
   // (the Pages build publishes it; a page opened from disk has none, so the button stays hidden there).
   $("samplebtn").hidden = !!rec || (!sample && location.protocol === "file:");

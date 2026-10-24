@@ -15,7 +15,7 @@
  * Optional argument: array of extra folders to search for mod PBOs.
  */
 params [["_extraPaths", [], [[]]]];
-if (!canSuspend) exitWith { _extraPaths spawn aar_fnc_gameData };
+if (!canSuspend) exitWith { [_extraPaths] spawn aar_fnc_gameData };
 private _begin = ("arma_aar" callExtension ["gd_begin", []]) select 0;
 if (_begin isNotEqualTo "ok") exitWith {
     diag_log format ["[AAR] game data export not started: %1", ["the extension did not load", "one is already running"] select (_begin isEqualTo "busy")];
@@ -67,6 +67,7 @@ private _texture = { if (_this isNotEqualTo "") then { _textures set [toLowerANS
     if (isText _x) then {
         _rows set [configName _x, getText _x];
         (getText _x) call _texture;
+        if (count _rows >= 200) then { ["vehicle_icons"] call _flush };
     };
 } forEach configProperties [configFile >> "CfgVehicleIcons", "true", true];
 ["vehicle_icons"] call _flush;
@@ -76,6 +77,7 @@ private _texture = { if (_this isNotEqualTo "") then { _textures set [toLowerANS
     if (_icon isNotEqualTo "") then {
         _rows set [configName _x, _icon];
         _icon call _texture;
+        if (count _rows >= 200) then { ["marker_icons"] call _flush };
     };
 } forEach configProperties [configFile >> "CfgMarkers", "true", true];
 ["marker_icons"] call _flush;
@@ -89,6 +91,15 @@ private _texture = { if (_this isNotEqualTo "") then { _textures set [toLowerANS
     };
 } forEach configProperties [configFile >> "CfgMarkers", "true", true];
 ["marker_defaults"] call _flush;
+
+{
+    private _color = getArray (_x >> "color");
+    if (count _color >= 3) then {
+        _rows set [configName _x, _color apply { if (_x isEqualType "") then { call compile _x } else { _x } }];
+        if (count _rows >= 200) then { ["marker_colors"] call _flush };
+    };
+} forEach configProperties [configFile >> "CfgMarkerColors", "isClass _x", true];
+["marker_colors"] call _flush;
 
 private _mods = getLoadedModsInfo;  // [name, folder, default, official, ...]
 private _header = createHashMap;

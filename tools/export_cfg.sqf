@@ -10,6 +10,7 @@
  *   vehicle_icons: CfgVehicleIcons class -> texture
  *   marker_icons:  CfgMarkers class -> texture
  *   marker_defaults: CfgMarkers class -> [resolved RGBA, showEditorMarkerColor]
+ *   marker_colors: CfgMarkerColors class -> resolved RGBA
  */
 private _out = createHashMap;
 _out set ["format", "aar-cfg"];
@@ -61,6 +62,15 @@ private _markerDefaults = createHashMap;
     };
 } forEach configProperties [configFile >> "CfgMarkers", "true", true];
 _out set ["marker_defaults", _markerDefaults];
+
+private _markerColors = createHashMap;
+{
+    private _color = getArray (_x >> "color");
+    if (count _color >= 3) then {
+        _markerColors set [configName _x, _color apply {if (_x isEqualType "") then {call compile _x} else {_x}}];
+    };
+} forEach configProperties [configFile >> "CfgMarkerColors", "isClass _x", true];
+_out set ["marker_colors", _markerColors];
 
 private _json = toJSON _out;
 copyToClipboard _json;
