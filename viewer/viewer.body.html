@@ -1034,8 +1034,9 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
   const tiles = { world: "", slug: "", width: 0, height: 0, ppm: 1, native: 0, minZoom: 0, maxZoom: 0, version: "", bg: "" };
   let embedded = null;
   try { embedded = JSON.parse(document.getElementById("terrains")?.textContent || "null"); } catch {}
-  // Highest zoom that actually loads, learnt as tiles load: a zoom where tiles keep failing while none
-  // load caps the zoom one below it.
+  // Zoom range that actually loads, learnt as tiles load: a zoom where tiles keep failing while none load
+  // raises the lowest zoom above it when it is below native (MissionDB has no tiles below zoom 3, which
+  // matters when the terrain's config could not be read) and caps the zoom below it when it is above.
   let zoomStats = [], zoomCap = 99;
   const tileCache = new Map();
   let tileStats = { ok: 0, failed: 0 };
@@ -1083,7 +1084,12 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
       c = { img, ok: null };
       const zs = zoomStats[z] ||= { ok: 0, failed: 0 };
       img.onload = () => { c.ok = true; tileStats.ok++; zs.ok++; };
-      img.onerror = () => { c.ok = false; tileStats.failed++; zs.failed++; if (!zs.ok && zs.failed >= 6 && z > tiles.minZoom) zoomCap = Math.min(zoomCap, z - 1); };
+      img.onerror = () => {
+        c.ok = false; tileStats.failed++; zs.failed++;
+        if (zs.ok || zs.failed < 6 || zoomStats[z] !== zs) return;   // last check: a tile of a terrain since replaced
+        if (z < tiles.native) tiles.minZoom = Math.max(tiles.minZoom, z + 1);
+        else if (z > tiles.native) zoomCap = Math.min(zoomCap, z - 1);
+      };
       img.src = url;
       tileCache.set(url, c);
     }
