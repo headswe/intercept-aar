@@ -357,7 +357,7 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
   const NOT_EVENTS = new Set(["header", "entity", "snap", "deleted", "submunition", "proj_end", "orbat", "perf", "radio_tx_end", "radio_nets", "cover_map", "leader"]);
 
   let rec = null;               // parsed recording
-  let t = 0, playing = false, speed = 4;
+  let t = 0, playing = false, speed = 1;
   let clip = null, clipSel = null, clipMode = false, playFrom = 0;  // clip: {a, b} in seconds, from a shared link or the Share panel
   let selected = 0, follow = false;
   let view = { cx: 0, cy: 0, scale: 1 };   // world centre and pixels per metre
