@@ -190,7 +190,12 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
 .clock { font-family: var(--font-data); font-variant-numeric: tabular-nums; font-size: 15px; }
 .clock span { color: var(--ink-soft); font-size: 12px; }
 .timeline { position: relative; height: 44px; min-width: 0; }
-.timeline canvas { width: 100%; height: 100%; display: block; cursor: pointer; }
+.timeline canvas { width: 100%; height: 100%; display: block; cursor: pointer; touch-action: none; }
+/* The Clip button and the clip chip share one slot sized to the wider of the two, so the timeline does not jump when a clip is set. */
+.clipslot { display: grid; }
+.clipslot > .btn { grid-area: 1 / 1; }
+.clipslot > .btn[hidden] { display: block !important; visibility: hidden; }
+.share .btn[aria-pressed="true"] { background: var(--ink); color: var(--ground); border-color: var(--ink); }
 .tltip { bottom: calc(100% + 6px); font-family: var(--font-ui); font-size: 12px; max-width: min(360px, 90vw); white-space: normal; z-index: 6; }
 .tltip .lane { font-family: var(--font-display); font-weight: 600; font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-soft); }
 .tltip time { font-family: var(--font-data); color: var(--ink-soft); margin-right: 6px; }
@@ -316,7 +321,8 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
     </button>
     <div class="clock" id="clock">00:00 <span>/ 00:00</span></div>
     <div class="share">
-      <button class="btn" id="clipchip" hidden aria-label="Stop playing the clip"></button>
+      <span class="clipslot"><button class="btn" id="clipchip" hidden aria-label="Clear the clip">Clip 00:00–00:00 ✕</button>
+      <button class="btn" id="clipbtn" aria-pressed="false" hidden title="Drag on the timeline to pick a clip (or Shift+drag any time)">Clip</button></span>
       <button class="btn" id="sharebtn" aria-haspopup="true" aria-expanded="false" hidden>Share</button>
       <div class="sharepop" id="sharepop" hidden role="dialog" aria-label="Share"></div>
     </div>
@@ -344,7 +350,7 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
 
   let rec = null;               // parsed recording
   let t = 0, playing = false, speed = 4;
-  let clip = null, playFrom = 0;  // clip: {a, b} in seconds, from a shared link or the Share panel
+  let clip = null, clipSel = null, clipMode = false, playFrom = 0;  // clip: {a, b} in seconds, from a shared link or the Share panel
   let selected = 0, follow = false;
   let view = { cx: 0, cy: 0, scale: 1 };   // world centre and pixels per metre
   const filters = Object.fromEntries(FILTERS.map(f => [f[0], f[2]]));
@@ -1762,11 +1768,20 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
       tlBase = tctx.getImageData(0, 0, tl.width, tl.height);
       tlDirty = false;
     } else tctx.putImageData(tlBase, 0, 0);
-    if (rec && rec.duration > 0 && clip) {
+    // The clip, or the range being dragged out: dim outside it, with a grip on each edge.
+    const cr = clipSel || clip;
+    if (rec && rec.duration > 0 && cr) {
       tctx.fillStyle = C.ground; tctx.globalAlpha = .6;
-      tctx.fillRect(0, 0, clip.a / rec.duration * w, h); tctx.fillRect(clip.b / rec.duration * w, 0, w, h);
+      tctx.fillRect(0, 0, cr.a / rec.duration * w, h); tctx.fillRect(cr.b / rec.duration * w, 0, w, h);
       tctx.globalAlpha = 1; tctx.fillStyle = C.accent;
-      for (const v of [clip.a, clip.b]) tctx.fillRect(v / rec.duration * w - .5, 0, 1, h);
+      for (const v of [cr.a, cr.b]) { const x = v / rec.duration * w; tctx.fillRect(x - .5, 0, 1, h); tctx.fillRect(x - 2, h / 2 - 7, 4, 14); }
+    }
+    if (rec && rec.duration > 0 && clipMode && !clipSel) {
+      tctx.font = "12px " + getComputedStyle(document.body).getPropertyValue("--font-data");
+      const msg = "Drag across the timeline to select a clip", mw = tctx.measureText(msg).width + 16;
+      tctx.fillStyle = C.ground; tctx.globalAlpha = .9; tctx.fillRect(w / 2 - mw / 2, h / 2 - 10, mw, 20); tctx.globalAlpha = 1;
+      tctx.fillStyle = C.ink; tctx.textBaseline = "middle"; tctx.textAlign = "center";
+      tctx.fillText(msg, w / 2, h / 2); tctx.textAlign = "start";
     }
     if (rec && rec.duration > 0) {
       const x = t / rec.duration * w;
@@ -2474,7 +2489,7 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
       loadTerrain(world, +r.header.world_size || WORLD_SIZES[world] || 0);
       $("samplebtn").hidden = true;   // only offered while nothing is loaded; keeps the header on one line
       rec = r; t = 0; selected = 0; follow = false; playing = false; setPlayIcon(); setEmpty();
-      setClip(null); setLink(null); $("sharebtn").hidden = false; showShare(false);
+      setClip(null); setClipMode(false); setLink(null); $("sharebtn").hidden = false; $("clipbtn").hidden = false; showShare(false);
       $("error").hidden = true;
       unitMode = r.orbat ? "orbat" : "groups"; $("orbat-mode").hidden = !r.orbat; setUnitMode(unitMode);
       dataType = null; dataLimit = 100; dataQuery = "";
@@ -2600,13 +2615,47 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
   map.addEventListener("pointerleave", () => hover = null);
   map.addEventListener("wheel", e => { e.preventDefault(); zoomAt(Math.exp(-e.deltaY * 0.0015), e.offsetX, e.offsetY); }, { passive: false });
 
-  // timeline scrub
-  let scrubbing = false;
-  const scrub = e => { if (!rec) return; const r = tl.getBoundingClientRect(); t = Math.min(rec.duration, Math.max(0, (e.clientX - r.left) / r.width * rec.duration)); };
-  tl.addEventListener("pointerdown", e => { scrubbing = true; tl.setPointerCapture(e.pointerId); scrub(e); });
-  tl.addEventListener("pointermove", e => { if (scrubbing) scrub(e); timelineTip(e); });
-  tl.addEventListener("pointerup", () => scrubbing = false);
+  // timeline: drag scrubs. In clip mode (the Clip button) or with Shift, a drag selects a clip instead;
+  // the edges of an existing clip can be dragged to adjust it.
+  let scrubbing = false, clipDrag = null;
+  const tlTime = e => { const r = tl.getBoundingClientRect(); return Math.min(rec.duration, Math.max(0, (e.clientX - r.left) / r.width * rec.duration)); };
+  const scrub = e => { if (rec) t = tlTime(e); };
+  const clipEdge = e => {
+    if (!clip) return null;
+    const r = tl.getBoundingClientRect(), x = e.clientX - r.left, xa = clip.a / rec.duration * r.width, xb = clip.b / rec.duration * r.width;
+    const da = Math.abs(x - xa), db = Math.abs(x - xb);
+    return Math.min(da, db) > 7 ? null : da < db ? "a" : "b";
+  };
+  function setClipMode(on) { clipMode = on; $("clipbtn").setAttribute("aria-pressed", String(on)); }
+  tl.addEventListener("pointerdown", e => {
+    if (!rec) return;
+    tl.setPointerCapture(e.pointerId);
+    const edge = clipEdge(e), v = tlTime(e);
+    if (edge) clipDrag = { fixed: edge === "a" ? clip.b : clip.a, x0: e.clientX };
+    else if (clipMode || e.shiftKey) clipDrag = { fixed: v, x0: e.clientX };
+    else { scrubbing = true; scrub(e); return; }
+    clipSel = { a: Math.min(v, clipDrag.fixed), b: Math.max(v, clipDrag.fixed) };
+  });
+  tl.addEventListener("pointermove", e => {
+    if (!rec) return;
+    if (clipDrag) { const v = tlTime(e); clipSel = { a: Math.min(v, clipDrag.fixed), b: Math.max(v, clipDrag.fixed) }; t = v; }
+    else if (scrubbing) scrub(e);
+    else tl.style.cursor = clipEdge(e) ? "ew-resize" : clipMode || e.shiftKey ? "crosshair" : "";
+    if (clipDrag) $("tltip").hidden = true; else timelineTip(e);
+  });
   tl.addEventListener("pointerleave", () => { $("tltip").hidden = true; });
+  const tlUp = e => {
+    scrubbing = false;
+    if (!clipDrag) return;
+    const sel = clipSel, moved = Math.abs(e.clientX - clipDrag.x0) > 3;
+    clipDrag = null; clipSel = null;
+    if (!moved || e.type === "pointercancel" || sel.b - sel.a < 1) { if (e.type !== "pointercancel" && !moved) scrub(e); return; }
+    setClip(sel); setClipMode(false);
+    t = clip.a; playFrom = t; playing = false; setPlayIcon();
+    showShare(true);
+  };
+  tl.addEventListener("pointerup", tlUp); tl.addEventListener("pointercancel", tlUp);
+  $("clipbtn").onclick = () => setClipMode(!clipMode);
 
   // Timeline tooltip: the lane under the pointer (same rows drawTimeline uses) and what is in it there.
   const TL_LANES = [
@@ -2648,7 +2697,7 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
     else if (e.key === "ArrowLeft") t = Math.max(0, t - (e.shiftKey ? 30 : 5));
     else if (e.key === "]") { const i = SPEEDS.indexOf(speed); if (i < SPEEDS.length - 1) $("speed").children[i + 1].click(); }
     else if (e.key === "[") { const i = SPEEDS.indexOf(speed); if (i > 0) $("speed").children[i - 1].click(); }
-    else if (e.key === "Escape") { if (!$("sharepop").hidden) { showShare(false); $("sharebtn").focus(); } else if (!$("layers").hidden) $("layerbtn").click(); else select(0); }
+    else if (e.key === "Escape") { if (clipMode) setClipMode(false); else if (!$("sharepop").hidden) { showShare(false); $("sharebtn").focus(); } else if (!$("layers").hidden) $("layerbtn").click(); else select(0); }
   });
 
   // theme changes
@@ -2722,8 +2771,8 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
   function setClip(c) {
     clip = c && rec && c.b > c.a ? { a: Math.max(0, c.a), b: Math.min(rec.duration, c.b) } : null;
     const chip = $("clipchip");
-    chip.hidden = !clip;
-    if (clip) chip.textContent = "Clip " + fmtLong(clip.a) + "–" + fmtLong(clip.b) + " ✕";
+    chip.hidden = !clip; $("clipbtn").hidden = !!clip || !rec;
+    chip.textContent = clip ? "Clip " + fmtLong(clip.a) + "–" + fmtLong(clip.b) + " ✕" : "Clip 00:00–00:00 ✕";
   }
   $("clipchip").onclick = () => setClip(null);
   function shareUrl(kind) {
@@ -2745,6 +2794,7 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
       '<h3>Clip</h3><div class="line"><label for="clipa">From</label><input type="text" id="clipa" value="' + fmtLong(a) + '"><button class="btn" data-now="a">Now</button>' +
       '<label for="clipb">to</label><input type="text" id="clipb" value="' + fmtLong(b) + '"><button class="btn" data-now="b">Now</button></div>' +
       '<div class="line"><button class="btn" data-play="">Play clip</button><button class="btn" data-copy="clip"' + dis + ">Copy clip link</button></div>" +
+      '<div class="note">Or drag across the timeline after pressing Clip, or with Shift held. Drag a clip edge to adjust it.</div>' +
       (e ? '<label class="line"><input type="checkbox" id="sharefollow"' + (follow ? " checked" : "") + "> Follow " + esc(nameAt(e, t)) + " in the link</label>" : "") +
       '<div class="note" id="sharemsg" aria-live="polite"></div>';
   }
@@ -2770,7 +2820,7 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
       if (navigator.clipboard) navigator.clipboard.writeText(url).then(() => { msg.textContent = "Link copied."; }, manual); else manual();
     }
   };
-  addEventListener("click", e => { if (!$("sharepop").hidden && !e.target.closest(".share")) showShare(false); });
+  addEventListener("click", e => { if (!$("sharepop").hidden && !e.target.closest(".share, .timeline")) showShare(false); });
   readColors(); resize();
   const sample = document.getElementById("sample");
   // ?src=<url> opens a recording from a web address (the server must allow cross-origin requests).
