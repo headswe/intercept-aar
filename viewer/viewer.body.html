@@ -817,13 +817,17 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
     return pageUrl(fill(tpl, { path, key: encodeURIComponent(k) }));
   }
   // Arma's map icons are white on transparent; drawn in the side colour like the game does.
-  function tinted(path, col) {
+  // `multiply` scales the texture by the colour as the game does for markers, so white parts take
+  // the colour and a coloured texture (a flag) keeps its own colours under white.
+  function tinted(path, col, multiply = false) {
     const img = path && texture(path); if (!img) return null;
-    const k = texKey(path) + "|" + col;
+    const k = texKey(path) + "|" + col + (multiply ? "|x" : "");
     let cv = game.tinted.get(k);
     if (!cv) {
       cv = document.createElement("canvas"); cv.width = img.naturalWidth; cv.height = img.naturalHeight;
-      const c = cv.getContext("2d"); c.drawImage(img, 0, 0); c.globalCompositeOperation = "source-in"; c.fillStyle = col; c.fillRect(0, 0, cv.width, cv.height);
+      const c = cv.getContext("2d"); c.drawImage(img, 0, 0);
+      c.globalCompositeOperation = multiply ? "multiply" : "source-in"; c.fillStyle = col; c.fillRect(0, 0, cv.width, cv.height);
+      if (multiply) { c.globalCompositeOperation = "destination-in"; c.drawImage(img, 0, 0); }
       game.tinted.set(k, cv);
     }
     return cv;
@@ -1210,9 +1214,11 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
       if (!width || !height) continue;
       ctx.globalAlpha = st.alpha;
       const iconPath = game.marker_icons[lc(st.type)] || "";
-      const markerDefault = game.marker_defaults[lc(st.type)];
-      const tintable = markerDefault ? markerDefault[1] : !/^flag_/i.test(st.type);
-      const iconImage = iconPath && (tintable ? tinted(iconPath, markerColor(st.color, st.type)) : texture(iconPath));
+      // The game multiplies every marker texture by its colour; showEditorMarkerColor only says
+      // whether the editor offers a colour, so it must not decide the tint. Without exported
+      // defaults a flag in "Default" keeps its own colours.
+      const plain = !game.marker_defaults[lc(st.type)] && lc(st.color) === "default" && /^flag_/i.test(st.type);
+      const iconImage = iconPath && (plain ? texture(iconPath) : tinted(iconPath, markerColor(st.color, st.type), true));
       const icon = iconImage ? (() => {
         ctx.save(); ctx.translate(sx, sy); ctx.rotate((st.dir || 0) * Math.PI / 180);
         ctx.drawImage(iconImage, -width / 2, -height / 2, width, height); ctx.restore(); return true;
