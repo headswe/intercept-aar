@@ -2738,7 +2738,8 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
 
   // ---------- share links ----------
   // A link opens the same recording (?recording=<id>, ?src=<url>, or the page's own example) at a time
-  // (&t=<seconds>), optionally as a clip that plays to &end=<seconds>, following a unit (&unit=<id>).
+  // (&t=<seconds>), optionally as a clip that plays to &end=<seconds>, following a unit (&unit=<id>),
+  // with the map view (&map=<x>,<y>,<metres>: the centre and how many metres fit across the map's shorter side).
   // Times may also be written m:ss, h:mm:ss or 12m34s. apiHeaders never goes into a shared link.
   let linkSrc = null, shareT = 0;
   function parseTime(v) {
@@ -2752,8 +2753,10 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
   }
   const fmtLong = s => s >= 3600 ? Math.floor(s / 3600) + ":" + fmt(s % 3600) : fmt(s);
   const pendingLink = (() => {
-    const p = { t: parseTime(confParams.get("t")), end: parseTime(confParams.get("end")), unit: +confParams.get("unit") || 0 };
-    return isNaN(p.t) && isNaN(p.end) && !p.unit ? null : p;
+    const m = String(confParams.get("map") || "").split(",").map(Number);
+    const map = m.length === 3 && m.every(isFinite) && m[2] > 0 ? { x: m[0], y: m[1], span: m[2] } : null;
+    const p = { t: parseTime(confParams.get("t")), end: parseTime(confParams.get("end")), unit: +confParams.get("unit") || 0, map };
+    return isNaN(p.t) && isNaN(p.end) && !p.unit && !map ? null : p;
   })();
   let pending = pendingLink;
   // What the address bar says: the recording that is open, or nothing for a file opened from disk.
@@ -2761,7 +2764,7 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
     linkSrc = src;
     try {
       const q = new URLSearchParams(location.search);
-      for (const k of ["recording", "src", "t", "end", "unit"]) q.delete(k);
+      for (const k of ["recording", "src", "t", "end", "unit", "map"]) q.delete(k);
       if (src && src.recording != null) q.set("recording", src.recording);
       if (src && src.src) q.set("src", src.src);
       const qs = q.toString();
@@ -2775,9 +2778,13 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
     const D = rec.duration, a = Math.min(D, Math.max(0, isNaN(p.t) ? 0 : p.t));
     if (!isNaN(p.end) && p.end > a) { setClip({ a, b: Math.min(D, p.end) }); t = a; playFrom = a; playing = true; setPlayIcon(); }
     else t = a;
+    if (p.map) {
+      view.cx = p.map.x; view.cy = p.map.y;
+      view.scale = Math.min(60, Math.max(0.005, Math.min(W, H) / p.map.span));
+    }
     if (p.unit && rec.entities.has(p.unit)) {
       select(p.unit); follow = true; renderCard(true);
-      const s = stateAt(rec.entities.get(p.unit), t); if (s) { view.cx = s.x; view.cy = s.y; }
+      if (!p.map) { const s = stateAt(rec.entities.get(p.unit), t); if (s) { view.cx = s.x; view.cy = s.y; } }
     }
   }
   function setClip(c) {
@@ -2789,12 +2796,13 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
   $("clipchip").onclick = () => setClip(null);
   function shareUrl(kind) {
     const u = new URL(location.href);
-    for (const k of ["t", "end", "unit", "apiHeaders"]) u.searchParams.delete(k);
+    for (const k of ["t", "end", "unit", "map", "apiHeaders"]) u.searchParams.delete(k);
     if (kind === "clip" && clip) { u.searchParams.set("t", Math.floor(clip.a)); u.searchParams.set("end", Math.ceil(clip.b)); }
     else u.searchParams.set("t", Math.floor(shareT));
     const f = $("sharefollow");
     if (f && f.checked && selected) u.searchParams.set("unit", selected);
-    return u.href;
+    u.searchParams.set("map", Math.round(view.cx) + "," + Math.round(view.cy) + "," + Math.max(1, Math.round(Math.min(W, H) / view.scale)));
+    return u.href.replace(/([?&]map=)([^&]*)/, (_, k, v) => k + v.replace(/%2C/gi, ","));
   }
   function renderShare() {
     const ok = !!linkSrc, dis = ok ? "" : " disabled";
@@ -2806,7 +2814,7 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
       '<h3>Clip</h3><div class="line"><label for="clipa">From</label><input type="text" id="clipa" value="' + fmtLong(a) + '"><button class="btn" data-now="a">Now</button>' +
       '<label for="clipb">to</label><input type="text" id="clipb" value="' + fmtLong(b) + '"><button class="btn" data-now="b">Now</button></div>' +
       '<div class="line"><button class="btn" data-play="">Play clip</button><button class="btn" data-copy="clip"' + dis + ">Copy clip link</button></div>" +
-      '<div class="note">Or drag across the timeline after pressing Clip, or with Shift held. Drag a clip edge to adjust it.</div>' +
+      '<div class="note">Or drag across the timeline after pressing Clip, or with Shift held. Drag a clip edge to adjust it. Links keep the current map position and zoom.</div>' +
       (e ? '<label class="line"><input type="checkbox" id="sharefollow"' + (follow ? " checked" : "") + "> Follow " + esc(nameAt(e, t)) + " in the link</label>" : "") +
       '<div class="note" id="sharemsg" aria-live="polite"></div>';
   }
