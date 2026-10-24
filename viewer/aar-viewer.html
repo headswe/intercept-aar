@@ -81,14 +81,15 @@ main { display: grid; grid-template-columns: minmax(0, 1fr) 390px; gap: 0; min-h
 .layers label { display: inline-flex; gap: 6px; align-items: center; cursor: pointer; white-space: nowrap; }
 .layers .row { grid-column: 1 / -1; display: flex; gap: 6px; margin-top: 6px; }
 .layers .row .btn { padding: 2px 8px; font-size: 12px; }
-.scale { position: absolute; left: 12px; bottom: 22px; font-family: var(--font-data); font-size: 11px; color: var(--ink-soft); }
-.tilenote { position: absolute; left: 8px; bottom: 50px; font-family: var(--font-data); font-size: 11px; color: var(--east); background: color-mix(in srgb, var(--ground) 85%, transparent); padding: 3px 8px; border-radius: 4px; }
+.scale { font-family: var(--font-data); font-size: 11px; color: var(--ink-soft); }
+.tilenote { font-family: var(--font-data); font-size: 11px; color: var(--east); background: color-mix(in srgb, var(--ground) 85%, transparent); padding: 3px 8px; border-radius: 4px; }
 .tilenote:empty { display: none; }
 .scale i { display: block; height: 4px; border: 1px solid var(--ink-soft); border-top: 0; margin-bottom: 3px; }
-.mapleft { position: absolute; left: 12px; top: 10px; max-width: calc(100% - 72px); display: grid; gap: 6px; }
-/* Facts and key are two solid cards of one width, so what they cover is hidden, not washed out. */
-.legend { display: grid; grid-template-columns: repeat(2, max-content); gap: 3px 14px; font-size: 12px; color: var(--ink-soft); background: var(--panel); border: 1px solid var(--rule); border-radius: 6px; padding: 6px 10px; }
-.legend .keytoggle { grid-column: 1 / -1; justify-self: start; }
+/* Along the bottom of the map, clear of the grid numbers: the tile notice, the scale bar and the key,
+   a solid strip so what it covers is hidden, not washed out. */
+.mapbottom { position: absolute; left: 12px; right: 52px; bottom: 22px; display: grid; justify-items: start; gap: 6px; pointer-events: none; }
+.mapbottom > * { pointer-events: auto; }
+.legend { display: flex; flex-wrap: wrap; align-items: center; gap: 3px 14px; font-size: 12px; color: var(--ink-soft); background: var(--panel); border: 1px solid var(--rule); border-radius: 6px; padding: 5px 10px; }
 .legend span { display: inline-flex; align-items: center; gap: 5px; }
 .legend i { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
 .legend svg { flex: none; }
@@ -97,7 +98,7 @@ main { display: grid; grid-template-columns: minmax(0, 1fr) 390px; gap: 0; min-h
 .card { position: absolute; right: 52px; top: 10px; width: 230px; background: var(--panel); border: 1px solid var(--rule); border-radius: 6px; padding: 10px 12px; font-size: 13px; box-shadow: 0 6px 18px rgba(0,0,0,.12); }
 /* Before a recording is open only the map shows, with a drop zone in the middle. */
 .app.waiting main { grid-template-columns: minmax(0, 1fr); }
-.app.waiting aside, .app.waiting .transport, .app.waiting .zoom, .app.waiting .mapleft, .app.waiting .scale, .app.waiting .tilenote { display: none !important; }
+.app.waiting aside, .app.waiting .transport, .app.waiting .zoom, .app.waiting .mapbottom, .app.waiting .facts { display: none !important; }
 .app.waiting .board { border-right: 0; }
 .app:not(.waiting) .dropzone { display: none; }
 .dropzone { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: min(440px, calc(100% - 32px)); border: 2px dashed var(--rule); border-radius: 8px; padding: 26px 22px; text-align: center; display: grid; gap: 10px; justify-items: center; background: color-mix(in srgb, var(--ground) 90%, transparent); }
@@ -105,8 +106,8 @@ main { display: grid; grid-template-columns: minmax(0, 1fr) 390px; gap: 0; min-h
 .dropzone span { color: var(--ink-soft); font-size: 13px; }
 .dropzone code { font-family: var(--font-data); font-size: 12px; color: var(--ink); }
 .dropzone .row { display: flex; gap: 6px; flex-wrap: wrap; justify-content: center; }
-/* Mission facts: a small card at the top left, over the legend. */
-.facts { margin: 0; display: grid; grid-template-columns: auto auto; gap: 1px 10px; background: var(--panel); border: 1px solid var(--rule); border-radius: 6px; padding: 6px 10px; font-size: 12px; }
+/* Mission facts: a small card at the top left. */
+.facts { position: absolute; left: 12px; top: 10px; margin: 0; display: grid; grid-template-columns: auto auto; gap: 1px 10px; background: var(--panel); border: 1px solid var(--rule); border-radius: 6px; padding: 6px 10px; font-size: 12px; }
 .facts dt { font-family: var(--font-display); font-weight: 600; font-size: 11px; letter-spacing: .1em; text-transform: uppercase; color: var(--ink-soft); align-self: center; }
 .facts dd { margin: 0; font-family: var(--font-data); font-variant-numeric: tabular-nums; text-align: right; }
 .card .pic { display: block; max-width: 100%; max-height: 72px; margin: 0 0 6px; }
@@ -234,7 +235,8 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
   .facts .more { display: none; }
   .clock { white-space: nowrap; font-size: 13px; }
   .clock span { font-size: 11px; }
-  .card { right: 10px; top: auto; bottom: 34px; width: min(230px, calc(100% - 20px)); }
+  .card { right: 52px; top: 10px; width: min(230px, calc(100% - 64px)); }
+  .board:has(.card:not([hidden])) .facts { display: none; }
   .load { margin-left: 0; }
 }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
@@ -258,10 +260,7 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
   <main>
     <div class="board" id="board">
       <canvas id="map" aria-label="Map of the recorded mission"></canvas>
-      <div class="mapleft">
-        <dl class="facts" id="facts" hidden></dl>
-        <div class="legend" id="legend"></div>
-      </div>
+      <dl class="facts" id="facts" hidden></dl>
       <div class="zoom">
         <button class="btn" id="zin" aria-label="Zoom in">+</button>
         <button class="btn" id="zout" aria-label="Zoom out">−</button>
@@ -271,8 +270,11 @@ aside { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: 
         </button>
       </div>
       <div class="layers" id="layers" hidden></div>
-      <div class="scale" id="scale" hidden><i></i><span></span></div>
-      <div class="tilenote" id="tilenote"></div>
+      <div class="mapbottom">
+        <div class="tilenote" id="tilenote"></div>
+        <div class="scale" id="scale" hidden><i></i><span></span></div>
+        <div class="legend" id="legend"></div>
+      </div>
       <div class="card" id="card" hidden></div>
       <div class="dropzone" id="dropzone">
         <strong>Open a recording</strong>
