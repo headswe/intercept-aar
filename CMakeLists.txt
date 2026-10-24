@@ -23,6 +23,7 @@ if(MSVC)
     # Static CRT so the DLL needs no Visual C++ redistributable on the server.
     set_property(TARGET ${AAR_TARGET} PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
     target_compile_options(${AAR_TARGET} PRIVATE /W4 /EHsc)
+    target_link_libraries(${AAR_TARGET} PRIVATE shell32)
 else()
     target_compile_options(${AAR_TARGET} PRIVATE -Wall -Wextra -O2)
     target_link_options(${AAR_TARGET} PRIVATE -static-libgcc -static-libstdc++)
